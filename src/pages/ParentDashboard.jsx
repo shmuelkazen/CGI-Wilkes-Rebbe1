@@ -446,58 +446,9 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               )}
             </div>
 
-            {/* Payment Mode Toggle */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <button
-                onClick={() => { setPaymentMode("full"); setCustomAmount(""); }}
-                style={{
-                  ...s.btn(paymentMode === "full" ? "primary" : "secondary"),
-                  padding: "8px 16px", fontSize: 14,
-                }}
-              >
-                Pay in Full — ${(balanceDue / 100).toFixed(0)}
-              </button>
-              <button
-                onClick={() => setPaymentMode("custom")}
-                style={{
-                  ...s.btn(paymentMode === "custom" ? "primary" : "secondary"),
-                  padding: "8px 16px", fontSize: 14,
-                }}
-              >
-                Partial Payment
-              </button>
-            </div>
-
-            {/* Custom Amount Input */}
-            {paymentMode === "custom" && (
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: colors.textMid, display: "block", marginBottom: 4 }}>Amount to Pay (min $50)</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ fontSize: 18, fontWeight: 700, color: colors.forest }}>$</span>
-                  <input
-                    type="number"
-                    min="50"
-                    max={balanceDue / 100}
-                    step="1"
-                    style={{ ...s.input, width: 140, fontSize: 18, fontWeight: 700 }}
-                    value={customAmount}
-                    onChange={(e) => setCustomAmount(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Pay Button */}
+            {/* Pay in Full */}
             <button
               onClick={async () => {
-                let amountCents = balanceDue;
-                if (paymentMode === "custom") {
-                  const dollars = parseFloat(customAmount);
-                  if (!dollars || dollars < 50) return alert("Minimum payment is $50.");
-                  if (dollars * 100 > balanceDue) return alert("Amount exceeds your balance.");
-                  amountCents = Math.round(dollars * 100);
-                }
                 setPaying(true);
                 try {
                   const res = await fetch("/.netlify/functions/create-checkout", {
@@ -506,7 +457,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                     body: JSON.stringify({
                       parentId: user.id,
                       parentEmail: user.email,
-                      amountCents,
+                      amountCents: balanceDue,
                       siteUrl: window.location.origin,
                     }),
                   });
@@ -517,12 +468,60 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                 finally { setPaying(false); }
               }}
               disabled={paying}
-              style={{ ...s.btn("primary"), padding: "10px 28px", fontSize: 15 }}
+              style={{ ...s.btn("primary"), padding: "10px 28px", fontSize: 15, marginBottom: 12 }}
             >
-              {paying ? <Spinner size={16} /> : paymentMode === "custom" && customAmount
-                ? `Pay $${parseFloat(customAmount).toFixed(0)} Now`
-                : `Pay $${(balanceDue / 100).toFixed(0)} Now`}
+              {paying && paymentMode === "full" ? <Spinner size={16} /> : `Pay $${(balanceDue / 100).toFixed(0)} in Full`}
             </button>
+
+            {/* Partial Payment — always visible */}
+            <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: colors.textMid, marginBottom: 8 }}>Or make a partial payment (min $50)</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: colors.forest }}>$</span>
+                  <input
+                    type="number"
+                    min="50"
+                    max={balanceDue / 100}
+                    step="1"
+                    style={{ ...s.input, width: 120, fontSize: 16, fontWeight: 700 }}
+                    value={customAmount}
+                    onChange={(e) => setCustomAmount(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    const dollars = parseFloat(customAmount);
+                    if (!dollars || dollars < 50) return alert("Minimum payment is $50.");
+                    if (dollars * 100 > balanceDue) return alert("Amount exceeds your balance.");
+                    const amountCents = Math.round(dollars * 100);
+                    setPaying(true);
+                    setPaymentMode("custom");
+                    try {
+                      const res = await fetch("/.netlify/functions/create-checkout", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          parentId: user.id,
+                          parentEmail: user.email,
+                          amountCents,
+                          siteUrl: window.location.origin,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (data.url) { window.location.href = data.url; }
+                      else { alert(data.error || "Failed to create checkout session."); }
+                    } catch (e) { alert("Payment error: " + e.message); }
+                    finally { setPaying(false); }
+                  }}
+                  disabled={paying || !customAmount}
+                  style={{ ...s.btn("secondary"), padding: "8px 20px", fontSize: 14, opacity: customAmount ? 1 : 0.5 }}
+                >
+                  {paying && paymentMode === "custom" ? <Spinner size={16} /> : customAmount ? `Pay $${parseFloat(customAmount).toFixed(0)}` : "Enter amount"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {ledger && ledger.balance_cleared && (
