@@ -386,6 +386,239 @@ function LedgerModal({ ledger, parent, payments, onClose, onRecordPayment, onCle
 }
 
 // ============================================================
+// ADMIN CHILD MODAL (add/edit a child from admin side)
+// ============================================================
+function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }) {
+  const isEdit = !!child;
+  const [form, setForm] = useState({
+    first_name: child?.first_name || "",
+    last_name: child?.last_name || "",
+    date_of_birth: child?.date_of_birth || "",
+    gender: child?.gender || "",
+    grade: child?.grade ?? "",
+    tshirt_size: child?.tshirt_size || "",
+    allergies: child?.allergies || "",
+    medical_notes: child?.medical_notes || "",
+    emergency_contact_name: child?.emergency_contact_name || "",
+    emergency_contact_phone: child?.emergency_contact_phone || "",
+    emergency_contact_relation: child?.emergency_contact_relation || "",
+  });
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  // Auto-detect division based on DOB + gender
+  const matchedDivision = (() => {
+    if (!form.date_of_birth || !form.gender) return null;
+    const dob = new Date(form.date_of_birth);
+    return divisions.find((d) => {
+      if (d.gender_filter !== "any" && d.gender_filter !== form.gender) return false;
+      if (d.min_dob && dob < new Date(d.min_dob)) return false;
+      if (d.max_dob && dob > new Date(d.max_dob)) return false;
+      return true;
+    }) || null;
+  })();
+
+  return (
+    <Modal title={isEdit ? `Edit ${child.first_name}` : "Add Child"} onClose={onClose} width={520}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="First Name *"><input style={s.input} value={form.first_name} onChange={(e) => set("first_name", e.target.value)} /></Field>
+        <Field label="Last Name *"><input style={s.input} value={form.last_name} onChange={(e) => set("last_name", e.target.value)} /></Field>
+        <Field label="Date of Birth *"><input type="date" style={s.input} value={form.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} /></Field>
+        <Field label="Gender *">
+          <select style={s.input} value={form.gender} onChange={(e) => set("gender", e.target.value)}>
+            <option value="">Select…</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+        </Field>
+        <Field label="Grade">
+          <select style={s.input} value={form.grade} onChange={(e) => set("grade", e.target.value)}>
+            <option value="">Select…</option>
+            <option value="-1">Pre-K</option>
+            <option value="0">Kindergarten</option>
+            {[1,2,3,4,5,6,7,8,9,10,11,12].map((g) => <option key={g} value={g}>Grade {g}</option>)}
+          </select>
+        </Field>
+        <Field label="T-Shirt Size *">
+          <select style={s.input} value={form.tshirt_size} onChange={(e) => set("tshirt_size", e.target.value)}>
+            <option value="">Select…</option>
+            {["YXS","YS","YM","YL","AS","AM","AL","AXL","A2XL"].map((sz) => <option key={sz} value={sz}>{sz}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {matchedDivision && (
+        <div style={{ background: colors.forestPale, border: `1px solid ${colors.success}`, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
+          {Icons.check({ size: 14, color: colors.success })} <strong>Division:</strong> {matchedDivision.name}
+        </div>
+      )}
+      {form.date_of_birth && form.gender && !matchedDivision && (
+        <div style={{ background: colors.amberLight, border: `1px solid ${colors.amber}`, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13, color: colors.amber }}>
+          No matching division found for this DOB/gender combination.
+        </div>
+      )}
+
+      <Field label="Allergies *"><input style={s.input} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} placeholder="Write N/A BH if none" /></Field>
+      <Field label="Medical Notes *"><input style={s.input} value={form.medical_notes} onChange={(e) => set("medical_notes", e.target.value)} placeholder="Write N/A BH if none" /></Field>
+
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "12px 0", paddingTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: colors.textMid }}>Emergency Contact</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <Field label="Name"><input style={s.input} value={form.emergency_contact_name} onChange={(e) => set("emergency_contact_name", e.target.value)} /></Field>
+          <Field label="Phone"><input style={s.input} value={form.emergency_contact_phone} onChange={(e) => set("emergency_contact_phone", e.target.value)} /></Field>
+        </div>
+        <Field label="Relationship"><input style={s.input} value={form.emergency_contact_relation} onChange={(e) => set("emergency_contact_relation", e.target.value)} placeholder="e.g. Mother, Uncle" /></Field>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
+        <button onClick={() => {
+          if (!form.first_name.trim() || !form.last_name.trim()) return alert("Name is required.");
+          if (!form.date_of_birth) return alert("Date of birth is required.");
+          if (!form.gender) return alert("Gender is required.");
+          if (!form.tshirt_size) return alert("T-shirt size is required.");
+          if (!form.allergies.trim()) return alert("Allergies field is required (write N/A BH if none).");
+          if (!form.medical_notes.trim()) return alert("Medical notes field is required (write N/A BH if none).");
+          onSave({
+            ...form,
+            first_name: form.first_name.trim(),
+            last_name: form.last_name.trim(),
+            allergies: form.allergies.trim(),
+            medical_notes: form.medical_notes.trim(),
+            emergency_contact_name: form.emergency_contact_name.trim(),
+            emergency_contact_phone: form.emergency_contact_phone.trim(),
+            emergency_contact_relation: form.emergency_contact_relation.trim(),
+            grade: form.grade !== "" ? Number(form.grade) : null,
+            parent_id: parentId,
+            division_override: matchedDivision?.id || null,
+          });
+        }} disabled={saving} style={s.btn("primary")}>
+          {saving ? <Spinner size={16} /> : isEdit ? "Save Changes" : "Add Child"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================
+// FAMILY EDIT MODAL (edit parent info + manage children + additional emails)
+// ============================================================
+function FamilyEditModal({ parent, familyChildren, divisions, onClose, onSaveParent, onEditChild, onAddChild, saving }) {
+  const [form, setForm] = useState({
+    full_name: parent?.full_name || "",
+    phone: parent?.phone || "",
+    address: parent?.address || "",
+  });
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const [emails, setEmails] = useState(() => {
+    try { return Array.isArray(parent?.additional_emails) ? parent.additional_emails : JSON.parse(parent?.additional_emails || "[]"); }
+    catch { return []; }
+  });
+  const [newEmail, setNewEmail] = useState({ name: "", email: "" });
+
+  const addEmail = () => {
+    if (!newEmail.name.trim() || !newEmail.email.trim()) return alert("Both name and email are required.");
+    if (!/\S+@\S+\.\S+/.test(newEmail.email)) return alert("Please enter a valid email address.");
+    setEmails([...emails, { name: newEmail.name.trim(), email: newEmail.email.trim() }]);
+    setNewEmail({ name: "", email: "" });
+  };
+
+  const removeEmail = (idx) => setEmails(emails.filter((_, i) => i !== idx));
+
+  return (
+    <Modal title={`Edit Family — ${parent?.full_name || "Unknown"}`} onClose={onClose} width={580}>
+      {/* Parent Info */}
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: colors.textMid }}>Parent Info</div>
+      <Field label="Full Name *"><input style={s.input} value={form.full_name} onChange={(e) => set("full_name", e.target.value)} /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="Phone"><input style={s.input} value={form.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
+        <Field label="Login Email">
+          <input style={{ ...s.input, background: colors.bg, color: colors.textMid }} value={parent?.email || ""} disabled />
+        </Field>
+      </div>
+      <Field label="Address"><input style={s.input} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="Street, City, State ZIP" /></Field>
+
+      {/* Additional Email Recipients */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: colors.textMid }}>Additional Email Recipients</div>
+        <div style={{ fontSize: 12, color: colors.textLight, marginBottom: 10 }}>These people will receive all camp emails (confirmations, receipts, updates) alongside the primary login email.</div>
+
+        {emails.length > 0 && (
+          <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
+            {emails.map((em, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: colors.bg, borderRadius: 8, fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>{em.name}</span>
+                <span style={{ color: colors.textMid }}>{em.email}</span>
+                <button onClick={() => removeEmail(idx)} style={{ ...s.btn("ghost"), padding: "2px 6px", marginLeft: "auto", color: colors.coral }}>{Icons.x({ size: 12, color: colors.coral })}</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "end" }}>
+          <Field label="Name"><input style={s.input} value={newEmail.name} onChange={(e) => setNewEmail({ ...newEmail, name: e.target.value })} placeholder="e.g. Dad" /></Field>
+          <Field label="Email"><input style={s.input} value={newEmail.email} onChange={(e) => setNewEmail({ ...newEmail, email: e.target.value })} placeholder="dad@email.com" /></Field>
+          <button onClick={addEmail} style={{ ...s.btn("secondary"), padding: "9px 14px", marginBottom: 10 }}>{Icons.plus({ size: 14 })} Add</button>
+        </div>
+      </div>
+
+      {/* Children */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: colors.textMid }}>Children ({familyChildren.length})</div>
+          <button onClick={onAddChild} style={{ ...s.btn("ghost"), padding: "4px 10px", fontSize: 12, color: colors.forest }}>{Icons.plus({ size: 13, color: colors.forest })} Add Child</button>
+        </div>
+        {familyChildren.length === 0 ? (
+          <div style={{ fontSize: 13, color: colors.textLight, padding: "8px 0" }}>No children added yet.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 6 }}>
+            {familyChildren.map((kid) => {
+              const age = kid.date_of_birth ? Math.floor((Date.now() - new Date(kid.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null;
+              const div = divisions.find((d) => {
+                if (d.gender_filter !== "any" && d.gender_filter !== kid.gender) return false;
+                if (kid.date_of_birth) {
+                  const dob = new Date(kid.date_of_birth);
+                  if (d.min_dob && dob < new Date(d.min_dob)) return false;
+                  if (d.max_dob && dob > new Date(d.max_dob)) return false;
+                }
+                return true;
+              });
+              return (
+                <div key={kid.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: colors.bg, borderRadius: 8, fontSize: 13 }}>
+                  <div>
+                    <span style={{ fontWeight: 600 }}>{kid.first_name} {kid.last_name}</span>
+                    {age !== null && <span style={{ color: colors.textMid }}> · Age {age}</span>}
+                    {kid.gender && <span style={{ color: colors.textMid }}> · {kid.gender === "male" ? "M" : "F"}</span>}
+                    {div && <span style={{ color: colors.forest }}> · {div.name}</span>}
+                  </div>
+                  <button onClick={() => onEditChild(kid)} style={{ ...s.btn("ghost"), padding: "3px 8px", fontSize: 12 }}>{Icons.edit({ size: 12 })} Edit</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Save */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
+        <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
+        <button onClick={() => {
+          if (!form.full_name.trim()) return alert("Parent name is required.");
+          onSaveParent({
+            full_name: form.full_name.trim(),
+            phone: form.phone.trim(),
+            address: form.address.trim(),
+            additional_emails: JSON.stringify(emails),
+          });
+        }} disabled={saving} style={s.btn("primary")}>
+          {saving ? <Spinner size={16} /> : "Save Family"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================
 // ADMIN DASHBOARD
 // ============================================================
 export default function AdminDashboard({ user, setView, showToast }) {
@@ -411,6 +644,9 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const [settingsModal, setSettingsModal] = useState(false);
   const [ledgerModal, setLedgerModal] = useState(null);
   const [ledgerPayments, setLedgerPayments] = useState([]);
+  const [familyModal, setFamilyModal] = useState(null);
+  const [adminChildModal, setAdminChildModal] = useState(null);
+  const [adminChildParentId, setAdminChildParentId] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -586,6 +822,52 @@ export default function AdminDashboard({ user, setView, showToast }) {
       showToast("Balance cleared!");
       load();
       openLedger(parentId);
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  // ─── Family Edit ───
+  const handleSaveFamily = async (data) => {
+    setSaving(true);
+    try {
+      await sb.query("parents", {
+        method: "PATCH",
+        body: { ...data, updated_at: new Date().toISOString() },
+        filters: `&id=eq.${familyModal.id}`,
+        headers: { Prefer: "return=minimal" },
+      });
+      showToast("Family updated!");
+      load();
+      // Keep modal open with fresh data — close manually
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleSaveAdminChild = async (data) => {
+    setSaving(true);
+    try {
+      if (adminChildModal && adminChildModal !== "create") {
+        // Edit existing child
+        const { parent_id, division_override, ...updateData } = data;
+        await sb.query("children", {
+          method: "PATCH",
+          body: { ...updateData, updated_at: new Date().toISOString() },
+          filters: `&id=eq.${adminChildModal.id}`,
+          headers: { Prefer: "return=minimal" },
+        });
+        showToast("Child updated!");
+      } else {
+        // Add new child
+        await sb.query("children", {
+          method: "POST",
+          body: data,
+          headers: { Prefer: "return=minimal" },
+        });
+        showToast("Child added!");
+      }
+      setAdminChildModal(null);
+      setAdminChildParentId(null);
+      load();
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
   };
@@ -869,7 +1151,10 @@ export default function AdminDashboard({ user, setView, showToast }) {
                             {cleared ? <StatusBadge status="confirmed" /> : balance === 0 && due > 0 ? <StatusBadge status="paid" /> : balance > 0 ? <StatusBadge status="unpaid" /> : "—"}
                           </td>
                           <td style={{ padding: "10px 14px" }}>
-                            <button onClick={() => openLedger(p.id)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.dollar({ size: 13, color: colors.forest })} Billing</button>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button onClick={() => setFamilyModal(p)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.edit({ size: 13, color: colors.forest })} Edit</button>
+                              <button onClick={() => openLedger(p.id)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.dollar({ size: 13, color: colors.forest })} Billing</button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -991,6 +1276,28 @@ export default function AdminDashboard({ user, setView, showToast }) {
           onClose={() => { setLedgerModal(null); setLedgerPayments([]); }}
           onRecordPayment={handleRecordPayment}
           onClearBalance={handleClearBalance}
+          saving={saving}
+        />
+      )}
+      {familyModal && !adminChildModal && (
+        <FamilyEditModal
+          parent={familyModal}
+          familyChildren={children.filter((c) => c.parent_id === familyModal.id)}
+          divisions={divisions}
+          onClose={() => setFamilyModal(null)}
+          onSaveParent={(data) => handleSaveFamily(data)}
+          onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }}
+          onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }}
+          saving={saving}
+        />
+      )}
+      {adminChildModal && (
+        <AdminChildModal
+          child={adminChildModal === "create" ? null : adminChildModal}
+          parentId={adminChildParentId}
+          divisions={divisions}
+          onClose={() => { setAdminChildModal(null); setAdminChildParentId(null); }}
+          onSave={handleSaveAdminChild}
           saving={saving}
         />
       )}
