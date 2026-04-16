@@ -1382,7 +1382,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
           onClose={() => { setAdminChildModal(null); setAdminChildParentId(null); }}
           onSave={handleSaveAdminChild}
           saving={saving}
-        />
+        /> 
       )}
     </div>
   );
