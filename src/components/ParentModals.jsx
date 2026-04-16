@@ -212,7 +212,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
 // ============================================================
 // REGISTER FOR DIVISION WEEKS MODAL
 // ============================================================
-export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings, siblingCount, onClose, onRegister, saving }) => {
+export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings, siblingCount, parent, onClose, onRegister, saving }) => {
   const division = divisions.find((d) => d.id === child.assigned_division_id);
   const divisionWeeks = (weeks || [])
     .filter((w) => w.division_id === child.assigned_division_id && w.active)
@@ -227,6 +227,8 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
   const [discountError, setDiscountError] = useState("");
   const [checkingCode, setCheckingCode] = useState(false);
 
+  const isElrc = parent?.elrc_status === true;
+
   const toggleWeek = (id) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -236,34 +238,87 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
     });
   };
 
-  const getWeekPrice = (week) => week.price_override_cents ?? division?.per_week_price ?? 0;
+  // Base price per week — ELRC or regular
+  const getBasePrice = (week) => {
+    if (isElrc && division?.elrc_weekly_price != null) return division.elrc_weekly_price;
+    return week.price_override_cents ?? division?.per_week_price ?? 0;
+  };
 
-  const subtotal = [...selected].reduce((sum, wid) => {
-    const w = divisionWeeks.find((wk) => wk.id === wid);
-    return sum + (w ? getWeekPrice(w) : 0);
-  }, 0);
+  // Minimum floor from settings
+  const minFloor = settings?.minimum_weekly_price_cents ?? 0;
 
-  // Early bird
+  // Early bird: per-division fixed cents, only if NOT yet past deadline
+  // Early bird shows as "potential" — it applies at payment time if paid in full by deadline
   const earlyBirdDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null;
-  const isEarlyBird = earlyBirdDeadline && new Date() < earlyBirdDeadline;
-  const earlyBirdPercent = isEarlyBird ? (settings?.early_bird_discount_percent || 0) : 0;
-  const earlyBirdDiscount = Math.round(subtotal * earlyBirdPercent / 100);
+  const earlyBirdPerWeek = division?.early_bird_discount_cents || 0;
+  const showEarlyBird = earlyBirdDeadline && earlyBirdPerWeek > 0;
 
-  // Sibling discount
-  const siblingDiscountPercent = (siblingCount >= (settings?.sibling_discount_starts_at || 2))
-    ? (settings?.sibling_discount_value || 0) : 0;
-  const siblingDiscount = Math.round(subtotal * siblingDiscountPercent / 100);
+  // Full summer discount: auto if ALL division weeks are selected (already registered + newly selected)
+  const allDivisionWeekIds = new Set(divisionWeeks.map((w) => w.id));
+  const allRegisteredOrSelected = new Set([...alreadyRegisteredWeekIds, ...selected]);
+  const isFullSummer = allDivisionWeekIds.size > 0 && [...allDivisionWeekIds].every((id) => allRegisteredOrSelected.has(id));
+  const fullSummerPerWeek = division?.full_summer_discount_cents || 0;
 
-  // Code discount
+  // Sibling discount: fixed cents/week, elementary only check, starts at child #N
+  const siblingStartsAt = settings?.sibling_discount_starts_at ?? 2;
+  const siblingCentsPerWeek = settings?.sibling_discount_cents ?? 0;
+  const siblingElementaryOnly = settings?.sibling_discount_elementary_only ?? false;
+  const isSiblingEligible = siblingCount >= siblingStartsAt && siblingCentsPerWeek > 0
+    && (!siblingElementaryOnly || (division?.schedule_type === "full_day"));
+
+  // Calculate per-week price with all discounts, respecting floor
+  const calcWeekPrice = (week) => {
+    let price = getBasePrice(week);
+    // Note: early bird is shown but not subtracted from ledger — it applies when paid in full by deadline
+    // So we show two totals: "if paid by deadline" and "regular"
+    return price;
+  };
+
+  const calcWeekPriceWithEarlyBird = (week) => {
+    let price = getBasePrice(week);
+    let discount = earlyBirdPerWeek;
+    if (isFullSummer && fullSummerPerWeek > 0) discount += fullSummerPerWeek;
+    if (isSiblingEligible) discount += siblingCentsPerWeek;
+    price = Math.max(minFloor, price - discount);
+    return price;
+  };
+
+  const calcWeekPriceRegular = (week) => {
+    let price = getBasePrice(week);
+    let discount = 0;
+    if (isFullSummer && fullSummerPerWeek > 0) discount += fullSummerPerWeek;
+    if (isSiblingEligible) discount += siblingCentsPerWeek;
+    price = Math.max(minFloor, price - discount);
+    return price;
+  };
+
+  // Subtotals
+  const selectedWeeks = [...selected].map((wid) => divisionWeeks.find((w) => w.id === wid)).filter(Boolean);
+  const subtotal = selectedWeeks.reduce((sum, w) => sum + getBasePrice(w), 0);
+  const totalEarlyBird = selectedWeeks.reduce((sum, w) => sum + calcWeekPriceWithEarlyBird(w), 0);
+  const totalRegular = selectedWeeks.reduce((sum, w) => sum + calcWeekPriceRegular(w), 0);
+
+  // Discount breakdowns for display
+  const earlyBirdTotal = showEarlyBird ? selectedWeeks.length * earlyBirdPerWeek : 0;
+  const fullSummerTotal = (isFullSummer && fullSummerPerWeek > 0) ? selectedWeeks.length * fullSummerPerWeek : 0;
+  const siblingTotal = isSiblingEligible ? selectedWeeks.length * siblingCentsPerWeek : 0;
+
+  // Code discount (applied on top)
   let codeDiscount = 0;
   if (appliedDiscount) {
-    if (appliedDiscount.discount_type === "percent") codeDiscount = Math.round(subtotal * appliedDiscount.discount_value / 100);
+    if (appliedDiscount.discount_type === "percent") codeDiscount = Math.round(totalRegular * appliedDiscount.discount_value / 100);
     else if (appliedDiscount.discount_type === "fixed") codeDiscount = appliedDiscount.discount_value;
     else if (appliedDiscount.discount_type === "per_week") codeDiscount = appliedDiscount.discount_value * selected.size;
   }
 
-  const totalDiscount = earlyBirdDiscount + siblingDiscount + codeDiscount;
-  const total = Math.max(0, subtotal - totalDiscount);
+  // Final totals after code discount
+  const finalEarlyBird = Math.max(0, totalEarlyBird - codeDiscount);
+  const finalRegular = Math.max(0, totalRegular - codeDiscount);
+
+  // What goes on the ledger is the regular price (not early bird)
+  // Early bird is the discount they get IF they pay in full by deadline
+  const ledgerTotal = finalRegular;
+  const ledgerDiscount = subtotal - finalRegular;
 
   const applyCode = async () => {
     if (!discountCode.trim()) return;
@@ -307,11 +362,22 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
     );
   }
 
+  const displayPrice = isElrc && division.elrc_weekly_price != null
+    ? division.elrc_weekly_price : division.per_week_price;
+
   return (
     <Modal title={`Register ${child.first_name} — ${division.name}`} onClose={onClose} width={560}>
-      <p style={{ fontSize: 13, color: colors.textMid, marginBottom: 6 }}>
-        {division.schedule_type === "half_day" ? "Half Day" : "Full Day"} Program · ${(division.per_week_price / 100).toFixed(0)}/week
-      </p>
+      <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 6 }}>
+        {division.schedule_type === "half_day" ? "Half Day" : "Full Day"} Program · ${(displayPrice / 100).toFixed(0)}/week
+        {isElrc && <span style={{ color: colors.success, fontWeight: 600 }}> (ELRC Rate)</span>}
+      </div>
+
+      {/* Early bird notice */}
+      {showEarlyBird && earlyBirdDeadline && (
+        <div style={{ background: colors.forestPale, border: `1px solid ${colors.success}`, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
+          {Icons.dollar({ size: 14, color: colors.success })} <strong>Early Bird:</strong> Save ${(earlyBirdPerWeek / 100).toFixed(0)}/week when paid in full by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+        </div>
+      )}
 
       {availableWeeks.length === 0 ? (
         <div style={{ padding: "24px 0", textAlign: "center" }}>
@@ -332,7 +398,7 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
           <div style={{ display: "grid", gap: 8, marginBottom: 20 }}>
             {availableWeeks.map((w) => {
               const checked = selected.has(w.id);
-              const price = getWeekPrice(w);
+              const price = getBasePrice(w);
               return (
                 <div key={w.id} onClick={() => toggleWeek(w.id)} style={{
                   ...s.card, padding: 14, cursor: "pointer",
@@ -377,19 +443,19 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
           {selected.size > 0 && (
             <div style={{ ...s.card, background: colors.forestPale, marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 6 }}>
-                <span>{selected.size} week{selected.size !== 1 ? "s" : ""}</span>
+                <span>{selected.size} week{selected.size !== 1 ? "s" : ""} × ${(getBasePrice(selectedWeeks[0]) / 100).toFixed(0)}</span>
                 <span>${(subtotal / 100).toFixed(2)}</span>
               </div>
-              {earlyBirdDiscount > 0 && (
+              {fullSummerTotal > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success, marginBottom: 4 }}>
-                  <span>Early bird ({earlyBirdPercent}% off)</span>
-                  <span>−${(earlyBirdDiscount / 100).toFixed(2)}</span>
+                  <span>Full summer (${(fullSummerPerWeek / 100).toFixed(0)}/wk off)</span>
+                  <span>−${(fullSummerTotal / 100).toFixed(2)}</span>
                 </div>
               )}
-              {siblingDiscount > 0 && (
+              {siblingTotal > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success, marginBottom: 4 }}>
-                  <span>Sibling discount ({siblingDiscountPercent}% off)</span>
-                  <span>−${(siblingDiscount / 100).toFixed(2)}</span>
+                  <span>Sibling discount (${(siblingCentsPerWeek / 100).toFixed(0)}/wk off)</span>
+                  <span>−${(siblingTotal / 100).toFixed(2)}</span>
                 </div>
               )}
               {codeDiscount > 0 && (
@@ -398,10 +464,29 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
                   <span>−${(codeDiscount / 100).toFixed(2)}</span>
                 </div>
               )}
-              <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 6, fontFamily: font.display, fontSize: 20 }}>
-                <span>Total</span>
-                <span style={{ color: colors.forest }}>${(total / 100).toFixed(2)}</span>
-              </div>
+
+              {/* Show early bird as potential savings */}
+              {showEarlyBird && (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 6, fontFamily: font.display, fontSize: 18 }}>
+                    <span>If paid by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                    <span style={{ color: colors.success }}>${(finalEarlyBird / 100).toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.textMid, marginTop: 2 }}>
+                    <span>Early bird saves ${(earlyBirdTotal / 100).toFixed(0)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontFamily: font.display, fontSize: 20 }}>
+                    <span>Regular price</span>
+                    <span style={{ color: colors.forest }}>${(finalRegular / 100).toFixed(2)}</span>
+                  </div>
+                </>
+              )}
+              {!showEarlyBird && (
+                <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 6, fontFamily: font.display, fontSize: 20 }}>
+                  <span>Total</span>
+                  <span style={{ color: colors.forest }}>${(finalRegular / 100).toFixed(2)}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -410,16 +495,17 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
             <button
               onClick={() => {
                 if (selected.size === 0) return alert("Select at least one week.");
-                const weekRegs = [...selected].map((wid) => {
-                  const w = divisionWeeks.find((wk) => wk.id === wid);
-                  return { week_id: wid, division_id: child.assigned_division_id, price_cents: getWeekPrice(w) };
-                });
+                const weekRegs = selectedWeeks.map((w) => ({
+                  week_id: w.id,
+                  division_id: child.assigned_division_id,
+                  price_cents: calcWeekPriceRegular(w),
+                }));
                 onRegister({
                   child_id: child.id,
                   weeks: weekRegs,
                   subtotal_cents: subtotal,
-                  discount_cents: totalDiscount,
-                  total_cents: total,
+                  discount_cents: subtotal - finalRegular,
+                  total_cents: finalRegular,
                   discount_code_id: appliedDiscount?.id || null,
                 });
               }}
@@ -436,24 +522,57 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
 };
 
 // ============================================================
-// PROFILE MODAL (unchanged)
+// PROFILE MODAL
 // ============================================================
 export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
   const [form, setForm] = useState({
     full_name: parent.full_name || "",
     phone: parent.phone || "",
     address: parent.address || "",
+    elrc_status: parent.elrc_status ?? false,
+    elrc_acknowledged: parent.elrc_acknowledged ?? false,
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const handleElrcToggle = (checked) => {
+    if (checked && !form.elrc_acknowledged) {
+      set("elrc_status", true);
+    } else {
+      set("elrc_status", checked);
+    }
+  };
 
   return (
     <Modal title="My Profile" onClose={onClose}>
       <Field label="Full Name"><input style={s.input} value={form.full_name} onChange={(e) => set("full_name", e.target.value)} /></Field>
       <Field label="Phone"><input style={s.input} value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="(555) 123-4567" /></Field>
       <Field label="Address"><input style={s.input} value={form.address} onChange={(e) => set("address", e.target.value)} /></Field>
+
+      {/* ELRC Self-Identification */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", marginBottom: 4 }}>
+          <input type="checkbox" checked={form.elrc_status} onChange={(e) => handleElrcToggle(e.target.checked)} />
+          <strong>My family receives ELRC / childcare subsidies</strong>
+        </label>
+        {form.elrc_status && (
+          <div style={{ marginLeft: 26, marginTop: 8 }}>
+            <div style={{ background: colors.amberLight, border: `1px solid ${colors.amber}`, borderRadius: 8, padding: 10, fontSize: 13, color: colors.textMid, marginBottom: 8 }}>
+              By checking this box, I acknowledge that if ELRC funds do not come through for any reason, I am responsible for paying the full camp rate.
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={form.elrc_acknowledged} onChange={(e) => set("elrc_acknowledged", e.target.checked)} />
+              I understand and agree
+            </label>
+          </div>
+        )}
+      </div>
+
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
-        <button onClick={() => onSave(form)} disabled={saving} style={s.btn("primary")}>{saving ? <Spinner size={16} /> : "Save"}</button>
+        <button onClick={() => {
+          if (form.elrc_status && !form.elrc_acknowledged) return alert("Please acknowledge the ELRC disclaimer before saving.");
+          onSave(form);
+        }} disabled={saving} style={s.btn("primary")}>{saving ? <Spinner size={16} /> : "Save"}</button>
       </div>
     </Modal>
   );

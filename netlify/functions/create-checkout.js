@@ -41,7 +41,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { parentId, parentEmail, amountCents, siteUrl } = JSON.parse(event.body);
+    const { parentId, parentEmail, amountCents, siteUrl, isRegistrationFee } = JSON.parse(event.body);
 
     if (!parentId || !amountCents || amountCents <= 0) {
       return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Parent ID and amount are required" }) };
@@ -52,11 +52,47 @@ exports.handler = async (event) => {
     const parent = parents && parents[0];
     const email = parentEmail || parent?.email || "";
 
-    // Fetch children for this parent to build description
+    const baseUrl = siteUrl || process.env.SITE_URL || "https://comforting-custard-5d02c6.netlify.app";
+
+    // Registration fee — simple checkout, no need to look up children/registrations
+    if (isRegistrationFee) {
+      const checkoutSession = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: "CGI Wilkes Rebbe — Registration Fee",
+                description: "One-time family registration fee",
+              },
+              unit_amount: amountCents,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: "payment",
+        customer_email: email,
+        success_url: `${baseUrl}?payment=success`,
+        cancel_url: `${baseUrl}?payment=cancelled`,
+        metadata: {
+          parent_id: parentId,
+          amount_cents: String(amountCents),
+          is_registration_fee: "true",
+        },
+      });
+
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ url: checkoutSession.url }),
+      };
+    }
+
+    // Regular camp payment — existing logic unchanged
     const children = await supabaseQuery("children", { filters: `&parent_id=eq.${parentId}` });
     const childNames = (children || []).map((c) => `${c.first_name} ${c.last_name}`).join(", ");
 
-    // Fetch their pending registrations for line item detail
     const childIds = (children || []).map((c) => c.id);
     let registrations = [];
     if (childIds.length > 0) {
@@ -65,7 +101,6 @@ exports.handler = async (event) => {
       }) || [];
     }
 
-    // Fetch division and week info for descriptions
     const divisionIds = [...new Set(registrations.map((r) => r.division_id).filter(Boolean))];
     const weekIds = [...new Set(registrations.map((r) => r.week_id).filter(Boolean))];
 
@@ -81,16 +116,12 @@ exports.handler = async (event) => {
     const weekMap = Object.fromEntries(weeks.map((w) => [w.id, w]));
     const childMap = Object.fromEntries((children || []).map((c) => [c.id, c]));
 
-    // Build a single line item for the balance amount
-    // with a detailed description of what they're paying for
     const description = registrations.map((r) => {
       const child = childMap[r.child_id];
       const div = divMap[r.division_id];
       const wk = weekMap[r.week_id];
       return `${child?.first_name || "?"} — ${div?.name || "?"} ${wk?.name || ""}`;
     }).join(", ");
-
-    const baseUrl = siteUrl || process.env.SITE_URL || "https://comforting-custard-5d02c6.netlify.app";
 
     const checkoutSession = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],

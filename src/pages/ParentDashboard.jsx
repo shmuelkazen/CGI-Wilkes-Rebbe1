@@ -32,6 +32,9 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [addressForm, setAddressForm] = useState({ address: "", phone: "" });
   const [needsAddress, setNeedsAddress] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [feeOverrideCode, setFeeOverrideCode] = useState("");
+  const [feeOverrideError, setFeeOverrideError] = useState("");
+  const [payingFee, setPayingFee] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -207,6 +210,63 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
     } finally { setSaving(false); }
   };
 
+  // Registration fee handlers
+  const regFeeRequired = settings?.registration_fee_required === true;
+  const regFeeCents = settings?.registration_fee_cents ?? 4500;
+  const regFeePaid = ledger?.registration_fee_paid === true;
+  const regFeeOverrideCode = settings?.registration_fee_override_code || "";
+  const showRegFeeGate = regFeeRequired && !regFeePaid && regFeeCents > 0;
+
+  const handlePayRegFee = async () => {
+    setPayingFee(true);
+    try {
+      const res = await fetch("/.netlify/functions/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentId: user.id,
+          parentEmail: user.email,
+          amountCents: regFeeCents,
+          siteUrl: window.location.origin,
+          isRegistrationFee: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.url) { window.location.href = data.url; }
+      else { alert(data.error || "Failed to create checkout session."); }
+    } catch (e) { alert("Payment error: " + e.message); }
+    finally { setPayingFee(false); }
+  };
+
+  const handleFeeOverride = async () => {
+    if (!feeOverrideCode.trim()) return;
+    if (feeOverrideCode.trim().toUpperCase() !== regFeeOverrideCode.toUpperCase()) {
+      setFeeOverrideError("Invalid code");
+      return;
+    }
+    // Mark fee as paid via override
+    try {
+      if (ledger) {
+        await sb.query("family_ledger", {
+          method: "PATCH",
+          body: { registration_fee_paid: true, updated_at: new Date().toISOString() },
+          filters: `&parent_id=eq.${user.id}`,
+          headers: { Prefer: "return=minimal" },
+        });
+      } else {
+        await sb.query("family_ledger", {
+          method: "POST",
+          body: { parent_id: user.id, registration_fee_paid: true, total_due_cents: 0, total_paid_cents: 0 },
+          headers: { Prefer: "return=minimal" },
+        });
+      }
+      showToast("Registration fee waived!");
+      setFeeOverrideCode("");
+      setFeeOverrideError("");
+      load();
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
   if (loading) return <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}><Spinner size={32} /></div>;
 
   const childRegs = (childId) => registrations.filter((r) => r.child_id === childId);
@@ -216,6 +276,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const campName = settings.camp_name || "CGI Wilkes Rebbe";
   const campSeason = settings.camp_season || "Summer 2026 Registration";
   const balanceDue = ledger ? (ledger.total_due_cents - ledger.total_paid_cents) : 0;
+  const canRegister = !needsAddress && (!showRegFeeGate);
 
   return (
     <div style={{ minHeight: "100vh", background: colors.bg }}>
@@ -254,6 +315,36 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                     load();
                   } catch (e) { alert("Error: " + e.message); }
                 }} style={s.btn("primary")}>Save & Continue</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Registration Fee Gate */}
+        {!needsAddress && showRegFeeGate && (
+          <div style={{ ...s.card, border: `2px solid ${colors.forest}`, marginBottom: 24, animation: "fadeIn .3s ease" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              {Icons.dollar({ size: 20, color: colors.forest })}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 16 }}>Registration Fee Required</div>
+                <p style={{ fontSize: 14, color: colors.textMid, marginBottom: 16 }}>A one-time registration fee of <strong>${(regFeeCents / 100).toFixed(0)}</strong> per family is required before you can register for camp weeks.</p>
+                <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
+                  <button onClick={handlePayRegFee} disabled={payingFee} style={{ ...s.btn("primary"), padding: "10px 24px", fontSize: 15 }}>
+                    {payingFee ? <Spinner size={16} /> : `Pay $${(regFeeCents / 100).toFixed(0)} Registration Fee`}
+                  </button>
+                  {regFeeOverrideCode && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "end" }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: colors.textMid, display: "block", marginBottom: 4 }}>Override Code</label>
+                        <input style={{ ...s.input, width: 140, textTransform: "uppercase" }} value={feeOverrideCode}
+                          onChange={(e) => { setFeeOverrideCode(e.target.value.toUpperCase().replace(/\s/g, "")); setFeeOverrideError(""); }}
+                          placeholder="Enter code" />
+                      </div>
+                      <button onClick={handleFeeOverride} style={{ ...s.btn("secondary"), padding: "9px 14px" }}>Apply</button>
+                    </div>
+                  )}
+                </div>
+                {feeOverrideError && <div style={{ color: colors.coral || "#e53e3e", fontSize: 12, marginTop: 6 }}>{feeOverrideError}</div>}
               </div>
             </div>
           </div>
@@ -367,7 +458,12 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                         </div>
                       )}
                     </div>
-                    <button onClick={() => { setSelectedChild(child); setModal("register"); }} style={s.btn("secondary")}>{Icons.calendar({ size: 14 })} Register for {div ? div.name : "Camp"}</button>
+                    <button
+                      onClick={() => { if (!canRegister) return alert(showRegFeeGate ? "Please pay the registration fee first." : "Please complete your address first."); setSelectedChild(child); setModal("register"); }}
+                      style={{ ...s.btn("secondary"), opacity: canRegister ? 1 : 0.5 }}
+                    >
+                      {Icons.calendar({ size: 14 })} Register for {div ? div.name : "Camp"}
+                    </button>
                   </div>
                 );
               })}
@@ -381,6 +477,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
           <div style={{ display: "grid", gap: 12 }}>
             {divisions.map((div, i) => {
               const divWeeks = weeks.filter((w) => w.division_id === div.id);
+              const isElrc = parent?.elrc_status === true;
+              const displayPrice = isElrc && div.elrc_weekly_price != null ? div.elrc_weekly_price : div.per_week_price;
               return (
                 <div key={div.id} style={{ ...s.card, animation: `slideIn .3s ease ${i * .05}s both` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
@@ -395,10 +493,15 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                           `${w.name} (${new Date(w.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })})`
                         ).join(", ")}
                       </div>
+                      {div.early_bird_discount_cents > 0 && settings?.early_bird_deadline && (
+                        <div style={{ fontSize: 12, color: colors.success, marginTop: 4 }}>
+                          Early bird: ${((displayPrice - div.early_bird_discount_cents) / 100).toFixed(0)}/week if paid by {new Date(settings.early_bird_deadline).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </div>
+                      )}
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontFamily: font.display, fontSize: 22, color: colors.forest }}>${(div.per_week_price / 100).toFixed(0)}</div>
-                      <div style={{ fontSize: 12, color: colors.textMid }}>per week</div>
+                      <div style={{ fontFamily: font.display, fontSize: 22, color: colors.forest }}>${(displayPrice / 100).toFixed(0)}</div>
+                      <div style={{ fontSize: 12, color: colors.textMid }}>per week{isElrc ? " (ELRC)" : ""}</div>
                     </div>
                   </div>
                 </div>
@@ -423,6 +526,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
           existingRegs={childRegs(selectedChild.id)}
           settings={settings}
           siblingCount={children.length}
+          parent={parent}
           onClose={() => setModal(null)}
           onRegister={handleRegister}
           saving={saving}
