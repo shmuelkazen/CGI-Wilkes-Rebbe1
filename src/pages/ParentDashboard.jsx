@@ -2,152 +2,67 @@ import { useState, useEffect, useCallback } from "react";
 import sb from "../lib/supabase";
 import { colors, font, s } from "../lib/styles";
 import Icons from "../lib/icons";
-import { Spinner, EmptyState, StatusBadge } from "../components/UI";
+import { Spinner, EmptyState, StatusBadge, Modal, Field } from "../components/UI";
 import { AddChildModal, RegisterModal, ProfileModal } from "../components/ParentModals";
 
-// ============================================================
-// HELPER: compute child age from DOB
-// ============================================================
-function computeAge(dob) {
+// Helper: calculate age from DOB (fixed — validates date properly)
+function calcAge(dob) {
   if (!dob) return null;
   const birth = new Date(dob);
   if (isNaN(birth.getTime())) return null;
   const today = new Date();
   let age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
   return age;
 }
 
-// ============================================================
-// CHILD CARD — clean status display
-// ============================================================
-function ChildCard({ child, registrations, weeks, divisions, onRegister }) {
-  const age = computeAge(child.date_of_birth);
-  const division = divisions.find((d) => d.id === child.assigned_division_id);
-
-  // Group registrations by status
-  const childRegs = (registrations || []).filter((r) => r.child_id === child.id);
-  const confirmedCount = childRegs.filter((r) => r.status === "confirmed").length;
-  const pendingCount = childRegs.filter((r) => r.status === "pending").length;
-
-  // Map week IDs to names
-  const weekMap = Object.fromEntries((weeks || []).map((w) => [w.id, w]));
-
-  return (
-    <div style={{
-      background: "#fff", borderRadius: 14, padding: 20, marginBottom: 14,
-      border: `1px solid ${colors.border}`, boxShadow: "0 1px 3px rgba(0,0,0,.04)",
-    }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 18, color: colors.text }}>{child.first_name} {child.last_name}</h3>
-          <div style={{ fontSize: 13, color: colors.textLight, marginTop: 2 }}>
-            {age !== null ? `Age ${age}` : ""}
-            {child.grade != null ? ` · ${child.grade === 0 ? "K" : child.grade === -1 ? "Pre-K" : `Grade ${child.grade}`}` : ""}
-            {division ? ` · ${division.name}` : ""}
-            {child.tshirt_size ? ` · ${child.tshirt_size}` : ""}
-          </div>
-        </div>
-        {(child.medical_info && child.medical_info !== "N/A BH" && child.medical_info !== "N/A") && (
-          <span style={{
-            background: "#fef2f2", color: "#dc2626", fontSize: 11, fontWeight: 700,
-            padding: "3px 8px", borderRadius: 6,
-          }}>Medical Note</span>
-        )}
-      </div>
-
-      {/* Registered weeks — clean display */}
-      {childRegs.length > 0 ? (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {childRegs.map((reg) => {
-              const week = weekMap[reg.week_id];
-              const weekName = week?.name || "Week";
-              const isGood = reg.status === "confirmed";
-              const isPending = reg.status === "pending";
-              const isCancelled = reg.status === "cancelled";
-              return (
-                <span key={reg.id} style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  padding: "5px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-                  background: isCancelled ? "#f5f5f5" : isGood ? "#f0fdf4" : "#fffbeb",
-                  color: isCancelled ? "#999" : isGood ? "#16a34a" : "#d97706",
-                  textDecoration: isCancelled ? "line-through" : "none",
-                }}>
-                  {isGood && "✓"}{isPending && "○"}{isCancelled && "×"} {weekName}
-                </span>
-              );
-            })}
-          </div>
-          {/* Summary line */}
-          <div style={{ fontSize: 12, color: colors.textLight, marginTop: 8 }}>
-            {confirmedCount > 0 && `${confirmedCount} confirmed`}
-            {confirmedCount > 0 && pendingCount > 0 && " · "}
-            {pendingCount > 0 && <span style={{ color: "#d97706" }}>{pendingCount} pending</span>}
-          </div>
-        </div>
-      ) : (
-        <div style={{ fontSize: 13, color: colors.textLight, marginBottom: 14 }}>
-          Not registered for any weeks yet
-        </div>
-      )}
-
-      <button onClick={() => onRegister(child)} style={{
-        ...s.button, background: "#fff", color: colors.primary,
-        border: `1.5px solid ${colors.primary}`, fontSize: 13, padding: "8px 16px",
-      }}>
-        Register for {division ? division.name : "Sessions"}
-      </button>
-    </div>
-  );
-}
-
-// ============================================================
-// PARENT DASHBOARD
-// ============================================================
 export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
-  const [parent, setParent] = useState(null);
   const [children, setChildren] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [weeks, setWeeks] = useState([]);
   const [registrations, setRegistrations] = useState([]);
+  const [parent, setParent] = useState(null);
   const [ledger, setLedger] = useState(null);
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);     // "addChild" | "register" | "profile" | "payment"
-  const [activeChild, setActiveChild] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [selectedChild, setSelectedChild] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [addressForm, setAddressForm] = useState({ address: "", phone: "" });
+  const [needsAddress, setNeedsAddress] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [par, kids, divs, wks, settingsRows] = await Promise.all([
-        sb.query("parents", { filters: `&id=eq.${user.id}`, single: true }),
-        sb.query("children", { filters: `&parent_id=eq.${user.id}&order=created_at.asc` }),
+      const [c, divs, wks, p, settingsRows] = await Promise.all([
+        sb.query("children", { filters: `&parent_id=eq.${user.id}&order=first_name.asc` }),
         sb.query("divisions", { filters: `&active=eq.true&order=sort_order.asc` }),
         sb.query("division_weeks", { filters: `&active=eq.true&order=sort_order.asc` }),
+        sb.query("parents", { filters: `&id=eq.${user.id}`, single: true }),
         sb.query("camp_settings"),
       ]);
-      setParent(par);
-      setChildren(kids || []);
+      setChildren(c || []);
       setDivisions(divs || []);
       setWeeks(wks || []);
+      setParent(p);
 
-      // Parse settings into a flat object
-      const s = {};
+      // Parse settings into flat object
+      const st = {};
       (settingsRows || []).forEach((row) => {
-        try { s[row.key] = JSON.parse(row.value); } catch { s[row.key] = row.value; }
+        try { st[row.key] = JSON.parse(row.value); } catch { st[row.key] = row.value; }
       });
-      setSettings(s);
+      setSettings(st);
 
       // Load registrations for all children
-      if (kids && kids.length > 0) {
-        const childIds = kids.map((k) => k.id);
+      if (c && c.length > 0) {
+        const childIds = c.map((k) => k.id);
         const regs = await sb.query("registrations", {
           filters: `&child_id=in.(${childIds.join(",")})&order=created_at.asc`,
         });
         setRegistrations(regs || []);
+      } else {
+        setRegistrations([]);
       }
 
       // Load family ledger
@@ -156,8 +71,13 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         setLedger(led);
       } catch { setLedger(null); }
 
+      // Check if address is missing
+      if (p && (!p.address || !p.address.trim())) {
+        setNeedsAddress(true);
+        setAddressForm({ address: p.address || "", phone: p.phone || "" });
+      }
     } catch (e) {
-      console.error("Parent load:", e);
+      console.error("Load error:", e);
     } finally {
       setLoading(false);
     }
@@ -165,31 +85,46 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Handle Stripe redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("payment") === "success") {
+      showToast("Payment successful! Thank you.");
+      window.history.replaceState(null, "", window.location.pathname);
+      load();
+    } else if (params.get("payment") === "cancelled") {
+      showToast("Payment was cancelled.");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
   const handleSignOut = async () => { await sb.signOut(); window.location.reload(); };
 
-  // ---- Add Child ----
-  const handleAddChild = async (childData) => {
+  const handleAddChild = async (data) => {
     setSaving(true);
     try {
       await sb.query("children", {
         method: "POST",
-        body: { ...childData, parent_id: user.id },
+        body: { ...data, parent_id: user.id },
         headers: { Prefer: "return=minimal" },
       });
       showToast("Child added!");
-      setModal(null);
-      await load();
+      load();
+      return true;
     } catch (e) {
-      showToast("Error: " + e.message);
-    }
-    setSaving(false);
+      alert("Error: " + e.message);
+      return false;
+    } finally { setSaving(false); }
   };
 
-  // ---- Register child for weeks ----
+  const handleAddAnother = () => {
+    setModal(null);
+    setTimeout(() => setModal("add-child"), 50);
+  };
+
   const handleRegister = async (regData) => {
     setSaving(true);
     try {
-      // Insert registrations for each selected week
       for (const week of regData.weeks) {
         await sb.query("registrations", {
           method: "POST",
@@ -229,7 +164,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         });
       }
 
-      // Log discount if applied
       if (regData.discount_cents > 0) {
         await sb.query("payment_log", {
           method: "POST",
@@ -238,175 +172,263 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
             amount_cents: regData.discount_cents,
             method: "discount",
             discount_code_id: regData.discount_code_id,
-            notes: `Discount applied: early bird / sibling / code`,
+            notes: "Discount applied",
           },
           headers: { Prefer: "return=minimal" },
         });
       }
 
-      showToast("Registration submitted!");
+      showToast(`Registered for ${regData.weeks.length} week${regData.weeks.length !== 1 ? "s" : ""}!`);
       setModal(null);
-      setActiveChild(null);
-      await load();
-
-      // TODO: redirect to Stripe checkout here if paying now
-
+      load();
     } catch (e) {
-      showToast("Error: " + e.message);
-    }
-    setSaving(false);
+      if (e.message?.includes("unique") || e.message?.includes("duplicate")) {
+        alert("This child is already registered for one of the selected weeks.");
+      } else {
+        alert("Error: " + e.message);
+      }
+    } finally { setSaving(false); }
   };
 
-  // ---- Update Profile ----
-  const handleUpdateProfile = async (profileData) => {
+  const handleUpdateProfile = async (data) => {
     setSaving(true);
     try {
       await sb.query("parents", {
         method: "PATCH",
-        body: { ...profileData, updated_at: new Date().toISOString() },
+        body: data,
         filters: `&id=eq.${user.id}`,
         headers: { Prefer: "return=minimal" },
       });
       showToast("Profile updated!");
       setModal(null);
-      await load();
+      load();
     } catch (e) {
-      showToast("Error: " + e.message);
-    }
-    setSaving(false);
+      alert("Error: " + e.message);
+    } finally { setSaving(false); }
   };
 
-  if (loading) return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", background: colors.bg }}>
-      <Spinner size={32} />
-    </div>
-  );
+  if (loading) return <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}><Spinner size={32} /></div>;
+
+  const childRegs = (childId) => registrations.filter((r) => r.child_id === childId);
+  const weekById = (id) => weeks.find((w) => w.id === id);
+  const divisionById = (id) => divisions.find((d) => d.id === id);
 
   const campName = settings.camp_name || "CGI Wilkes Rebbe";
-  const campSeason = settings.camp_season || "Summer 2026";
-  const parentName = parent?.full_name || user.user_metadata?.full_name || user.email;
-
-  // Balance info
+  const campSeason = settings.camp_season || "Summer 2026 Registration";
   const balanceDue = ledger ? (ledger.total_due_cents - ledger.total_paid_cents) : 0;
 
   return (
     <div style={{ minHeight: "100vh", background: colors.bg }}>
       {/* Header */}
-      <header style={{
-        background: "#fff", borderBottom: `1px solid ${colors.border}`,
-        padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center",
-      }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, color: colors.primary, fontFamily: font.heading }}>{campName}</h1>
-          <div style={{ fontSize: 12, color: colors.textLight }}>{campSeason}</div>
+      <header style={{ background: colors.forest, padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {Icons.trees({ color: "#fff", size: 24 })}
+          <span style={{ fontFamily: font.display, color: "#fff", fontSize: 20 }}>{campName}</span>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {isAdmin && (
-            <button onClick={() => setView("admin")} style={{ ...s.button, background: "#eee", color: colors.text, fontSize: 13 }}>
-              Admin
-            </button>
-          )}
-          <button onClick={() => setModal("profile")} style={{ ...s.button, background: "#eee", color: colors.text, fontSize: 13 }}>Profile</button>
-          <button onClick={handleSignOut} style={{ ...s.button, background: "#eee", color: colors.text, fontSize: 13 }}>Sign Out</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {isAdmin && <button onClick={() => setView("admin")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.8)", padding: "6px 14px", fontSize: 13 }}>{Icons.shield({ size: 14, color: "rgba(255,255,255,.8)" })} Admin</button>}
+          <button onClick={() => setModal("profile")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.8)", padding: "6px 14px", fontSize: 13 }}>{Icons.user({ size: 14, color: "rgba(255,255,255,.8)" })} Profile</button>
+          <button onClick={handleSignOut} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.6)", padding: "6px 10px" }}>{Icons.logout({ size: 16, color: "rgba(255,255,255,.6)" })}</button>
         </div>
       </header>
 
-      <div style={{ maxWidth: 680, margin: "0 auto", padding: "32px 20px" }}>
-        {/* Welcome */}
-        <h2 style={{ margin: "0 0 4px", fontSize: 26, fontFamily: font.heading, color: colors.text }}>Welcome, {parentName}</h2>
-        <p style={{ margin: "0 0 28px", color: colors.textLight, fontSize: 15 }}>{campSeason} Registration</p>
-
-        {/* Balance banner */}
-        {ledger && balanceDue > 0 && !ledger.balance_cleared && (
-          <div style={{
-            background: "#fffbeb", border: "1.5px solid #f59e0b", borderRadius: 12,
-            padding: "14px 18px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center",
-          }}>
-            <div>
-              <div style={{ fontWeight: 700, color: "#92400e", fontSize: 15 }}>Balance Due: ${(balanceDue / 100).toFixed(2)}</div>
-              <div style={{ fontSize: 12, color: "#a16207" }}>Total: ${(ledger.total_due_cents / 100).toFixed(2)} · Paid: ${(ledger.total_paid_cents / 100).toFixed(2)}</div>
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
+        {/* Address Required Prompt */}
+        {needsAddress && (
+          <div style={{ ...s.card, border: `2px solid ${colors.amber}`, marginBottom: 24, animation: "fadeIn .3s ease" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              {Icons.alertCircle({ size: 20, color: colors.amber })}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Please complete your profile</div>
+                <p style={{ fontSize: 14, color: colors.textMid, marginBottom: 16 }}>We need your mailing address on file before you can register.</p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", maxWidth: 500 }}>
+                  <Field label="Address *"><input style={s.input} value={addressForm.address} onChange={(e) => setAddressForm({ ...addressForm, address: e.target.value })} placeholder="123 Main St, City, State ZIP" /></Field>
+                  <Field label="Phone"><input style={s.input} value={addressForm.phone} onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })} placeholder="(555) 123-4567" /></Field>
+                </div>
+                <button onClick={async () => {
+                  if (!addressForm.address.trim()) return alert("Address is required.");
+                  try {
+                    await sb.query("parents", { method: "PATCH", body: { address: addressForm.address.trim(), phone: addressForm.phone.trim() }, filters: `&id=eq.${user.id}`, headers: { Prefer: "return=minimal" } });
+                    setNeedsAddress(false);
+                    showToast("Profile updated!");
+                    load();
+                  } catch (e) { alert("Error: " + e.message); }
+                }} style={s.btn("primary")}>Save & Continue</button>
+              </div>
             </div>
-            <button style={{ ...s.button, background: "#f59e0b", color: "#fff", fontSize: 13 }}
-              onClick={() => {/* TODO: Stripe payment flow */}}>
-              Make Payment
+          </div>
+        )}
+
+        {/* Welcome */}
+        <div style={{ marginBottom: 32, animation: "fadeIn .4s ease" }}>
+          <h1 style={{ fontFamily: font.display, fontSize: 28, marginBottom: 4 }}>Welcome, {parent?.full_name || user.email?.split("@")[0]}</h1>
+          <p style={{ color: colors.textMid }}>{campSeason}</p>
+        </div>
+
+        {/* Balance Due */}
+        {ledger && balanceDue > 0 && !ledger.balance_cleared && (
+          <div style={{ ...s.card, marginBottom: 24, border: `1px solid ${colors.amber}`, background: colors.amberLight }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{Icons.dollar({ size: 18, color: colors.amber })} Balance Due</div>
+              <div style={{ fontFamily: font.display, fontSize: 24, color: colors.forest }}>${(balanceDue / 100).toFixed(0)}</div>
+            </div>
+            <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
+                <span style={{ color: colors.textMid }}>Total charges</span>
+                <span style={{ fontWeight: 600 }}>${(ledger.total_due_cents / 100).toFixed(2)}</span>
+              </div>
+              {ledger.total_paid_cents > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
+                  <span style={{ color: colors.textMid }}>Paid</span>
+                  <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.total_paid_cents / 100).toFixed(2)}</span>
+                </div>
+              )}
+              {ledger.discount_amount_cents > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
+                  <span style={{ color: colors.textMid }}>Discounts</span>
+                  <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.discount_amount_cents / 100).toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={async () => {
+                setPaying(true);
+                try {
+                  const res = await fetch("/.netlify/functions/create-checkout", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      parentId: user.id,
+                      parentEmail: user.email,
+                      amountCents: balanceDue,
+                      siteUrl: window.location.origin,
+                    }),
+                  });
+                  const data = await res.json();
+                  if (data.url) { window.location.href = data.url; }
+                  else { alert(data.error || "Failed to create checkout session."); }
+                } catch (e) { alert("Payment error: " + e.message); }
+                finally { setPaying(false); }
+              }}
+              disabled={paying}
+              style={{ ...s.btn("primary"), padding: "10px 28px", fontSize: 15 }}
+            >
+              {paying ? <Spinner size={16} /> : `Pay $${(balanceDue / 100).toFixed(0)} Now`}
             </button>
           </div>
         )}
         {ledger && ledger.balance_cleared && (
-          <div style={{
-            background: "#f0fdf4", border: `1.5px solid ${colors.primary}`, borderRadius: 12,
-            padding: "14px 18px", marginBottom: 20,
-          }}>
-            <div style={{ fontWeight: 700, color: colors.primary, fontSize: 15 }}>✓ Balance Cleared</div>
+          <div style={{ ...s.card, marginBottom: 24, border: `1px solid ${colors.success}`, background: colors.forestPale }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {Icons.check({ size: 18, color: colors.success })}
+              <span style={{ fontWeight: 700, fontSize: 16, color: colors.success }}>Balance Cleared</span>
+            </div>
+            {ledger.balance_cleared_reason && <div style={{ fontSize: 13, color: colors.textMid, marginTop: 4, marginLeft: 26 }}>{ledger.balance_cleared_reason}</div>}
           </div>
         )}
 
         {/* My Children */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 20, fontFamily: font.heading }}>My Children</h3>
-          <button onClick={() => setModal("addChild")} style={{
-            ...s.button, background: colors.primary, color: "#fff", fontSize: 14,
-          }}>+ Add Child</button>
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h2 style={{ fontFamily: font.display, fontSize: 22 }}>My Children</h2>
+            <button onClick={() => { if (needsAddress) return alert("Please complete your address first."); setModal("add-child"); }} style={{ ...s.btn("primary"), opacity: needsAddress ? 0.5 : 1 }}>{Icons.plus({ size: 16, color: "#fff" })} Add Child</button>
+          </div>
+
+          {children.length === 0 ? (
+            <div style={s.card}>
+              <EmptyState icon={Icons.users} title="No children added yet" sub="Add your child's info to get started with registration." />
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {children.map((child, i) => {
+                const regs = childRegs(child.id);
+                const age = calcAge(child.date_of_birth);
+                const div = divisionById(child.assigned_division_id);
+                return (
+                  <div key={child.id} style={{ ...s.card, animation: `slideIn .3s ease ${i * .05}s both`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>{child.first_name} {child.last_name}</div>
+                      <div style={{ fontSize: 13, color: colors.textMid }}>
+                        {age !== null ? `Age ${age}` : ""}
+                        {child.grade != null ? ` · ${child.grade === 0 ? "K" : child.grade === -1 ? "Pre-K" : `Grade ${child.grade}`}` : ""}
+                        {div ? ` · ${div.name}` : ""}
+                        {child.tshirt_size ? ` · ${child.tshirt_size}` : ""}
+                      </div>
+                      {regs.length > 0 && (
+                        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                          {regs.filter((r) => r.status !== "cancelled").map((r) => {
+                            const week = weekById(r.week_id);
+                            return (
+                              <span key={r.id} style={{ ...s.badge(r.status === "confirmed" ? colors.success : r.status === "pending" ? colors.amber : colors.sky), fontSize: 11 }}>
+                                {r.status === "confirmed" ? "✓" : "○"} {week?.name || "Week"}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={() => { setSelectedChild(child); setModal("register"); }} style={s.btn("secondary")}>{Icons.calendar({ size: 14 })} Register for {div ? div.name : "Camp"}</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {children.length === 0 ? (
-          <div style={{
-            background: "#fff", borderRadius: 14, padding: 40, textAlign: "center",
-            border: `1px solid ${colors.border}`,
-          }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>👶</div>
-            <h3 style={{ margin: "0 0 8px" }}>No children added yet</h3>
-            <p style={{ color: colors.textLight, fontSize: 14, margin: "0 0 16px" }}>
-              Add your child to get started with registration
-            </p>
-            <button onClick={() => setModal("addChild")} style={{ ...s.button, background: colors.primary, color: "#fff" }}>
-              + Add Child
-            </button>
+        {/* Divisions & Pricing */}
+        <div>
+          <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>Divisions & Pricing</h2>
+          <div style={{ display: "grid", gap: 12 }}>
+            {divisions.map((div, i) => {
+              const divWeeks = weeks.filter((w) => w.division_id === div.id);
+              return (
+                <div key={div.id} style={{ ...s.card, animation: `slideIn .3s ease ${i * .05}s both` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <span style={{ fontFamily: font.display, fontSize: 17, marginBottom: 4, display: "block" }}>{div.name}</span>
+                      <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 4 }}>
+                        {div.schedule_type === "half_day" ? "Half Day" : "Full Day"}
+                        {div.description ? ` · ${div.description}` : ""}
+                      </div>
+                      <div style={{ fontSize: 12, color: colors.textLight }}>
+                        {divWeeks.length} week{divWeeks.length !== 1 ? "s" : ""}: {divWeeks.map((w) =>
+                          `${w.name} (${new Date(w.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })})`
+                        ).join(", ")}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: font.display, fontSize: 22, color: colors.forest }}>${(div.per_week_price / 100).toFixed(0)}</div>
+                      <div style={{ fontSize: 12, color: colors.textMid }}>per week</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ) : (
-          children.map((child) => (
-            <ChildCard
-              key={child.id}
-              child={child}
-              registrations={registrations}
-              weeks={weeks}
-              divisions={divisions}
-              onRegister={(c) => { setActiveChild(c); setModal("register"); }}
-            />
-          ))
-        )}
+        </div>
+
+        {/* Privacy Notice */}
+        <div style={{ marginTop: 32, padding: "16px 20px", background: colors.card, borderRadius: 10, border: `1px solid ${colors.borderLight}`, fontSize: 13, color: colors.textLight, lineHeight: 1.6 }}>
+          {Icons.shield({ size: 14, color: colors.textLight })} <strong style={{ color: colors.textMid }}>Privacy:</strong> Your family's information is stored securely and used only for camp administration. We do not share personal data with third parties. Medical and emergency contact information is accessible only to authorized camp staff.
+        </div>
       </div>
 
       {/* Modals */}
-      {modal === "addChild" && (
-        <AddChildModal
-          onClose={() => setModal(null)}
-          onSave={handleAddChild}
-          saving={saving}
-          divisions={divisions}
-        />
-      )}
-      {modal === "register" && activeChild && (
+      {modal === "add-child" && <AddChildModal onClose={() => setModal(null)} onSave={handleAddChild} onAddAnother={handleAddAnother} saving={saving} divisions={divisions} />}
+      {modal === "register" && selectedChild && (
         <RegisterModal
-          child={activeChild}
+          child={selectedChild}
           divisions={divisions}
           weeks={weeks}
-          existingRegistrations={registrations.filter((r) => r.child_id === activeChild.id)}
+          existingRegs={childRegs(selectedChild.id)}
           settings={settings}
           siblingCount={children.length}
-          onClose={() => { setModal(null); setActiveChild(null); }}
-          onSave={handleRegister}
-          saving={saving}
-        />
-      )}
-      {modal === "profile" && parent && (
-        <ProfileModal
-          parent={parent}
           onClose={() => setModal(null)}
-          onSave={handleUpdateProfile}
+          onRegister={handleRegister}
           saving={saving}
         />
       )}
+      {modal === "profile" && parent && <ProfileModal parent={parent} onClose={() => setModal(null)} onSave={handleUpdateProfile} saving={saving} />}
     </div>
   );
 }
