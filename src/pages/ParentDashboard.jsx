@@ -11,6 +11,19 @@ function calcAge(dob) {
   return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
 }
 
+// Payment status badge colors
+function paymentBadgeStyle(status) {
+  switch (status) {
+    case "paid":
+      return { bg: "#d4edda", text: "#155724" };
+    case "partial":
+      return { bg: "#fff3cd", text: "#856404" };
+    case "unpaid":
+    default:
+      return { bg: "#f8d7da", text: "#721c24" };
+  }
+}
+
 export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [children, setChildren] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -37,12 +50,10 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       ]);
       setChildren(c || []);
       setActiveSeason(season);
-      // Filter sessions to active season only
       const seasonSessions = season ? (ses || []).filter((s) => s.season_id === season.id) : (ses || []);
       setSessions(seasonSessions);
       setRegistrations(reg || []);
       setParent(p);
-      // Check if address is missing
       if (p && (!p.address || !p.address.trim())) {
         setNeedsAddress(true);
         setAddressForm({ address: p.address || "", phone: p.phone || "" });
@@ -89,7 +100,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   };
 
   const handleAddAnother = () => {
-    // Close current modal and reopen a fresh one
     setModal(null);
     setTimeout(() => setModal("add-child"), 50);
   };
@@ -146,6 +156,14 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
 
   const childRegs = (childId) => registrations.filter((r) => r.child_id === childId);
   const sessionById = (id) => sessions.find((ses) => ses.id === id);
+
+  // Billing data
+  const activeRegs = registrations.filter((r) => r.status !== "cancelled");
+  const paidRegs = activeRegs.filter((r) => r.payment_status === "paid");
+  const unpaidRegs = activeRegs.filter((r) => r.payment_status !== "paid");
+  const totalCharged = activeRegs.reduce((sum, r) => sum + (r.payment_amount_cents || 0), 0);
+  const totalPaid = paidRegs.reduce((sum, r) => sum + (r.payment_amount_cents || 0), 0);
+  const totalOutstanding = totalCharged - totalPaid;
 
   return (
     <div style={{ minHeight: "100vh", background: colors.bg }}>
@@ -285,10 +303,25 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                         <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                           {regs.map((r) => {
                             const ses = sessionById(r.session_id);
+                            const pStyle = paymentBadgeStyle(r.payment_status);
                             return (
-                              <span key={r.id} style={{ ...s.badge(r.status === "confirmed" ? colors.success : r.status === "pending" ? colors.amber : colors.sky), fontSize: 11 }}>
-                                {ses?.name || "Session"} · <StatusBadge status={r.status} />
-                              </span>
+                              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                <span style={{ ...s.badge(r.status === "confirmed" ? colors.success : r.status === "pending" ? colors.amber : colors.sky), fontSize: 11 }}>
+                                  {ses?.name || "Session"} · <StatusBadge status={r.status} />
+                                </span>
+                                <span style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  textTransform: "uppercase",
+                                  letterSpacing: ".04em",
+                                  padding: "2px 7px",
+                                  borderRadius: 4,
+                                  background: pStyle.bg,
+                                  color: pStyle.text,
+                                }}>
+                                  {r.payment_status}
+                                </span>
+                              </div>
                             );
                           })}
                         </div>
@@ -302,29 +335,108 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
           )}
         </div>
 
-        {/* Available Sessions */}
-        <div>
-          <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>Available Sessions</h2>
-          <div style={{ display: "grid", gap: 12 }}>
-            {sessions.map((ses, i) => {
-              return (
-                <div key={ses.id} style={{ ...s.card, animation: `slideIn .3s ease ${i * .05}s both` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-                    <div style={{ flex: 1, minWidth: 200 }}>
-                      <span style={{ fontFamily: font.display, fontSize: 17, marginBottom: 4, display: "block" }}>{ses.name}</span>
-                      <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 4 }}>{ses.dates} · Ages {ses.age_min}–{ses.age_max}</div>
-                      {ses.description && <div style={{ fontSize: 14, color: colors.textMid }}>{ses.description}</div>}
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontFamily: font.display, fontSize: 22, color: colors.forest }}>${(ses.price_cents / 100).toFixed(0)}</div>
-                      <div style={{ fontSize: 12, color: colors.textMid }}>per camper</div>
-                    </div>
-                  </div>
+        {/* Billing & Payment History */}
+        {registrations.length > 0 && (
+          <div style={{ marginBottom: 32 }}>
+            <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>Billing & Payments</h2>
+
+            {/* Summary cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+              <div style={{ ...s.card, textAlign: "center", padding: "16px 12px" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: colors.textLight, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Total Charged</div>
+                <div style={{ fontFamily: font.display, fontSize: 24, color: colors.text }}>${(totalCharged / 100).toFixed(0)}</div>
+              </div>
+              <div style={{ ...s.card, textAlign: "center", padding: "16px 12px" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#155724", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Paid</div>
+                <div style={{ fontFamily: font.display, fontSize: 24, color: "#155724" }}>${(totalPaid / 100).toFixed(0)}</div>
+              </div>
+              <div style={{ ...s.card, textAlign: "center", padding: "16px 12px" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: totalOutstanding > 0 ? "#856404" : "#155724", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                  {totalOutstanding > 0 ? "Outstanding" : "Outstanding"}
                 </div>
-              );
-            })}
+                <div style={{ fontFamily: font.display, fontSize: 24, color: totalOutstanding > 0 ? "#856404" : "#155724" }}>${(totalOutstanding / 100).toFixed(0)}</div>
+              </div>
+            </div>
+
+            {/* Line items table */}
+            <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead>
+                  <tr style={{ background: colors.bg }}>
+                    <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: colors.textLight, textTransform: "uppercase", letterSpacing: ".05em" }}>Child</th>
+                    <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: colors.textLight, textTransform: "uppercase", letterSpacing: ".05em" }}>Session</th>
+                    <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: colors.textLight, textTransform: "uppercase", letterSpacing: ".05em" }}>Amount</th>
+                    <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: colors.textLight, textTransform: "uppercase", letterSpacing: ".05em" }}>Status</th>
+                    <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: colors.textLight, textTransform: "uppercase", letterSpacing: ".05em" }}>Registered</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeRegs.map((r) => {
+                    const child = children.find((c) => c.id === r.child_id);
+                    const ses = sessionById(r.session_id);
+                    const pStyle = paymentBadgeStyle(r.payment_status);
+                    return (
+                      <tr key={r.id} style={{ borderTop: `1px solid ${colors.borderLight || "#eee"}` }}>
+                        <td style={{ padding: "12px 16px", fontWeight: 500 }}>{child?.first_name} {child?.last_name}</td>
+                        <td style={{ padding: "12px 16px", color: colors.textMid }}>{ses?.name || "—"}</td>
+                        <td style={{ padding: "12px 16px", fontWeight: 600 }}>${((r.payment_amount_cents || 0) / 100).toFixed(0)}</td>
+                        <td style={{ padding: "12px 16px" }}>
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: ".04em",
+                            padding: "3px 10px",
+                            borderRadius: 5,
+                            background: pStyle.bg,
+                            color: pStyle.text,
+                          }}>
+                            {r.payment_status}
+                          </span>
+                        </td>
+                        <td style={{ padding: "12px 16px", color: colors.textLight, fontSize: 13 }}>
+                          {new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {activeRegs.length === 0 && (
+                <div style={{ padding: 24, textAlign: "center", color: colors.textLight }}>No registrations yet.</div>
+              )}
+            </div>
+
+            {/* Cancelled registrations (collapsed) */}
+            {registrations.some((r) => r.status === "cancelled") && (
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ cursor: "pointer", fontSize: 13, color: colors.textLight, padding: "8px 0" }}>
+                  Show cancelled registrations ({registrations.filter((r) => r.status === "cancelled").length})
+                </summary>
+                <div style={{ ...s.card, padding: 0, overflow: "hidden", marginTop: 8, opacity: 0.7 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <tbody>
+                      {registrations.filter((r) => r.status === "cancelled").map((r) => {
+                        const child = children.find((c) => c.id === r.child_id);
+                        const ses = sessionById(r.session_id);
+                        return (
+                          <tr key={r.id} style={{ borderTop: `1px solid ${colors.borderLight || "#eee"}` }}>
+                            <td style={{ padding: "10px 16px", textDecoration: "line-through", color: colors.textLight }}>{child?.first_name} {child?.last_name}</td>
+                            <td style={{ padding: "10px 16px", textDecoration: "line-through", color: colors.textLight }}>{ses?.name || "—"}</td>
+                            <td style={{ padding: "10px 16px", color: colors.textLight }}>${((r.payment_amount_cents || 0) / 100).toFixed(0)}</td>
+                            <td style={{ padding: "10px 16px" }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, background: "#e2e3e5", color: "#6c757d" }}>Cancelled</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Privacy Notice */}
         <div style={{ marginTop: 32, padding: "16px 20px", background: colors.card, borderRadius: 10, border: `1px solid ${colors.borderLight}`, fontSize: 13, color: colors.textLight, lineHeight: 1.6 }}>
