@@ -471,6 +471,41 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
           )}
         </div>
 
+        {/* ELRC / Childcare Subsidy */}
+        <div style={{ ...s.card, marginBottom: 24, border: parent?.elrc_status ? `2px solid ${colors.success}` : `1px solid ${colors.border}` }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+            <input type="checkbox" checked={parent?.elrc_status === true}
+              onChange={async (e) => {
+                const checked = e.target.checked;
+                if (checked) {
+                  // Show acknowledgment first
+                  if (!window.confirm("By checking this box, you acknowledge that if ELRC funds do not come through for any reason, you are responsible for paying the full camp rate.\n\nDo you understand and agree?")) return;
+                }
+                try {
+                  await sb.query("parents", {
+                    method: "PATCH",
+                    body: { elrc_status: checked, elrc_acknowledged: checked, updated_at: new Date().toISOString() },
+                    filters: `&id=eq.${user.id}`,
+                    headers: { Prefer: "return=minimal" },
+                  });
+                  showToast(checked ? "ELRC status updated — you'll see the reduced rate below." : "ELRC status removed.");
+                  load();
+                } catch (err) { alert("Error: " + err.message); }
+              }}
+              style={{ width: 18, height: 18 }}
+            />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>My family receives ELRC / childcare subsidies</div>
+              <div style={{ fontSize: 13, color: colors.textMid, marginTop: 2 }}>Check this box to see your reduced rate. If ELRC funds do not come through, you are responsible for the full amount.</div>
+            </div>
+          </label>
+          {parent?.elrc_status && (
+            <div style={{ marginTop: 8, marginLeft: 28, fontSize: 13, color: colors.success, fontWeight: 600 }}>
+              {Icons.check({ size: 13, color: colors.success })} ELRC rate applied — see updated prices below
+            </div>
+          )}
+        </div>
+
         {/* Divisions & Pricing */}
         <div>
           <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>Divisions & Pricing</h2>
