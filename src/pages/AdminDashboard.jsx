@@ -719,6 +719,9 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const [search, setSearch] = useState("");
   const [filterDivision, setFilterDivision] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [familySearch, setFamilySearch] = useState("");
+  const [filterBalance, setFilterBalance] = useState("all");
+  const [filterElrc, setFilterElrc] = useState("all");
 
   // Modal state
   const [divisionModal, setDivisionModal] = useState(null);
@@ -1201,57 +1204,130 @@ export default function AdminDashboard({ user, setView, showToast }) {
         )}
 
         {/* ═══ FAMILIES TAB ═══ */}
-        {tab === "families" && (
-          <div>
-            <div style={{ fontSize: 14, color: colors.textMid, marginBottom: 16 }}>{parents.length} families</div>
-            <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
-              {parents.length === 0 ? (
-                <EmptyState icon={Icons.users} title="No families yet" sub="Families appear here when parents register." />
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
-                      {["Parent", "Email", "Children", "Total Due", "Paid", "Balance", "Status", "Actions"].map((h) => (
-                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parents.map((p) => {
-                      const kids = children.filter((c) => c.parent_id === p.id);
-                      const ledger = ledgerMap[p.id];
-                      const due = ledger?.total_due_cents || 0;
-                      const paid = ledger?.total_paid_cents || 0;
-                      const balance = due - paid;
-                      const cleared = ledger?.balance_cleared;
-                      return (
-                        <tr key={p.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
-                          <td style={{ padding: "10px 14px", fontWeight: 600 }}>{p.full_name || "—"}</td>
-                          <td style={{ padding: "10px 14px", color: colors.textMid }}>{p.email}</td>
-                          <td style={{ padding: "10px 14px" }}>{kids.map((k) => k.first_name).join(", ") || "—"}</td>
-                          <td style={{ padding: "10px 14px" }}>${(due / 100).toFixed(0)}</td>
-                          <td style={{ padding: "10px 14px", color: colors.success }}>${(paid / 100).toFixed(0)}</td>
-                          <td style={{ padding: "10px 14px", fontWeight: 600, color: cleared ? colors.success : balance > 0 ? colors.amber : colors.success }}>
-                            {cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`}
-                          </td>
-                          <td style={{ padding: "10px 14px" }}>
-                            {cleared ? <StatusBadge status="confirmed" /> : balance === 0 && due > 0 ? <StatusBadge status="paid" /> : balance > 0 ? <StatusBadge status="unpaid" /> : "—"}
-                          </td>
-                          <td style={{ padding: "10px 14px" }}>
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <button onClick={() => setFamilyModal(p)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.edit({ size: 13, color: colors.forest })} Edit</button>
-                              <button onClick={() => openLedger(p.id)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.dollar({ size: 13, color: colors.forest })} Billing</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+        {tab === "families" && (() => {
+          const filteredFamilies = parents.filter((p) => {
+            if (familySearch) {
+              const term = familySearch.toLowerCase();
+              const kids = children.filter((c) => c.parent_id === p.id);
+              const haystack = `${p.full_name || ""} ${p.email || ""} ${kids.map((k) => `${k.first_name} ${k.last_name}`).join(" ")}`.toLowerCase();
+              if (!haystack.includes(term)) return false;
+            }
+            if (filterElrc !== "all") {
+              if (filterElrc === "elrc" && !p.elrc_status) return false;
+              if (filterElrc === "non-elrc" && p.elrc_status) return false;
+            }
+            if (filterBalance !== "all") {
+              const ledger = ledgerMap[p.id];
+              const due = ledger?.total_due_cents || 0;
+              const paid = ledger?.total_paid_cents || 0;
+              const balance = due - paid;
+              const cleared = ledger?.balance_cleared;
+              if (filterBalance === "has_balance" && (balance <= 0 || cleared)) return false;
+              if (filterBalance === "paid_up" && (balance > 0 && !cleared)) return false;
+              if (filterBalance === "cleared" && !cleared) return false;
+            }
+            return true;
+          });
+
+          const exportFamiliesCSV = () => {
+            const rows = [["Parent", "Email", "Phone", "Address", "ELRC", "Children", "Total Due", "Paid", "Balance", "Status"]];
+            filteredFamilies.forEach((p) => {
+              const kids = children.filter((c) => c.parent_id === p.id);
+              const ledger = ledgerMap[p.id];
+              const due = ledger?.total_due_cents || 0;
+              const paid = ledger?.total_paid_cents || 0;
+              const balance = due - paid;
+              const cleared = ledger?.balance_cleared;
+              const status = cleared ? "Cleared" : balance === 0 && due > 0 ? "Paid" : balance > 0 ? "Unpaid" : "—";
+              rows.push([
+                p.full_name || "", p.email || "", p.phone || "", p.address || "",
+                p.elrc_status ? "Yes" : "No",
+                kids.map((k) => `${k.first_name} ${k.last_name}`).join("; ") || "—",
+                `$${(due / 100).toFixed(0)}`, `$${(paid / 100).toFixed(0)}`, cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`, status,
+              ]);
+            });
+            const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+            const blob = new Blob([csv], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = `cgi-families-${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click(); URL.revokeObjectURL(url);
+            showToast("Exported!");
+          };
+
+          return (
+            <div>
+              <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>{Icons.search({ size: 16, color: colors.textLight })}</span>
+                  <input style={{ ...s.input, paddingLeft: 36 }} placeholder="Search by name, email, or child…" value={familySearch} onChange={(e) => setFamilySearch(e.target.value)} />
+                </div>
+                <select style={{ ...s.input, width: "auto", minWidth: 140 }} value={filterBalance} onChange={(e) => setFilterBalance(e.target.value)}>
+                  <option value="all">All Balances</option>
+                  <option value="has_balance">Has Balance</option>
+                  <option value="paid_up">Paid Up</option>
+                  <option value="cleared">Cleared</option>
+                </select>
+                <select style={{ ...s.input, width: "auto", minWidth: 120 }} value={filterElrc} onChange={(e) => setFilterElrc(e.target.value)}>
+                  <option value="all">All Families</option>
+                  <option value="elrc">ELRC</option>
+                  <option value="non-elrc">Non-ELRC</option>
+                </select>
+                <button onClick={exportFamiliesCSV} style={s.btn("secondary")}>{Icons.download({ size: 14 })} Export CSV</button>
+              </div>
+
+              <div style={{ fontSize: 14, color: colors.textMid, marginBottom: 12 }}>{filteredFamilies.length} of {parents.length} families</div>
+
+              <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
+                {filteredFamilies.length === 0 ? (
+                  <EmptyState icon={Icons.users} title="No families found" sub="Adjust your filters or wait for parents to register." />
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
+                        {["Parent", "Email", "Children", "ELRC", "Total Due", "Paid", "Balance", "Status", "Actions"].map((h) => (
+                          <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredFamilies.map((p) => {
+                        const kids = children.filter((c) => c.parent_id === p.id);
+                        const ledger = ledgerMap[p.id];
+                        const due = ledger?.total_due_cents || 0;
+                        const paid = ledger?.total_paid_cents || 0;
+                        const balance = due - paid;
+                        const cleared = ledger?.balance_cleared;
+                        return (
+                          <tr key={p.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
+                            <td style={{ padding: "10px 14px", fontWeight: 600 }}>{p.full_name || "—"}</td>
+                            <td style={{ padding: "10px 14px", color: colors.textMid }}>{p.email}</td>
+                            <td style={{ padding: "10px 14px" }}>{kids.map((k) => k.first_name).join(", ") || "—"}</td>
+                            <td style={{ padding: "10px 14px" }}>{p.elrc_status ? <span style={{ ...s.badge(colors.forest), fontSize: 11 }}>ELRC</span> : "—"}</td>
+                            <td style={{ padding: "10px 14px" }}>${(due / 100).toFixed(0)}</td>
+                            <td style={{ padding: "10px 14px", color: colors.success }}>${(paid / 100).toFixed(0)}</td>
+                            <td style={{ padding: "10px 14px", fontWeight: 600, color: cleared ? colors.success : balance > 0 ? colors.amber : colors.success }}>
+                              {cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`}
+                            </td>
+                            <td style={{ padding: "10px 14px" }}>
+                              {cleared ? <StatusBadge status="confirmed" /> : balance === 0 && due > 0 ? <StatusBadge status="paid" /> : balance > 0 ? <StatusBadge status="unpaid" /> : "—"}
+                            </td>
+                            <td style={{ padding: "10px 14px" }}>
+                              <div style={{ display: "flex", gap: 4 }}>
+                                <button onClick={() => setFamilyModal(p)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.edit({ size: 13, color: colors.forest })} Edit</button>
+                                <button onClick={() => openLedger(p.id)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.dollar({ size: 13, color: colors.forest })} Billing</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ═══ DISCOUNTS TAB ═══ */}
         {tab === "discounts" && (
