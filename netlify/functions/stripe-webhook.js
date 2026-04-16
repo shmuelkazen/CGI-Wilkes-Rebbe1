@@ -50,10 +50,79 @@ exports.handler = async (event) => {
     const parentId = session.metadata?.parent_id;
     const amountCents = parseInt(session.metadata?.amount_cents || session.amount_total || 0);
     const isRegistrationFee = session.metadata?.is_registration_fee === "true";
+    const isShirtOrder = session.metadata?.is_shirt_order === "true";
+    const shirtOrderId = session.metadata?.shirt_order_id || null;
 
     if (parentId && amountCents > 0) {
       try {
-        // 1. Log the payment (always, regardless of type)
+        // ── Registration Fee ──
+        if (isRegistrationFee) {
+          // Log payment
+          await supabaseQuery("payment_log", {
+            method: "POST",
+            body: {
+              parent_id: parentId,
+              amount_cents: amountCents,
+              method: "stripe",
+              stripe_payment_id: session.payment_intent,
+              notes: "Registration fee",
+            },
+            headers: { Prefer: "return=minimal" },
+          });
+
+          // Mark fee as paid on ledger
+          const ledgers = await supabaseQuery("family_ledger", { filters: `&parent_id=eq.${parentId}` });
+          const ledger = ledgers && ledgers[0];
+          if (ledger) {
+            await supabaseQuery("family_ledger", {
+              method: "PATCH",
+              body: { registration_fee_paid: true, updated_at: new Date().toISOString() },
+              filters: `&parent_id=eq.${parentId}`,
+              headers: { Prefer: "return=minimal" },
+            });
+          } else {
+            await supabaseQuery("family_ledger", {
+              method: "POST",
+              body: { parent_id: parentId, registration_fee_paid: true, total_due_cents: 0, total_paid_cents: 0 },
+              headers: { Prefer: "return=minimal" },
+            });
+          }
+
+          console.log(`Registration fee paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
+          return { statusCode: 200, body: JSON.stringify({ received: true }) };
+        }
+
+        // ── T-Shirt Order ──
+        if (isShirtOrder) {
+          // Log payment
+          await supabaseQuery("payment_log", {
+            method: "POST",
+            body: {
+              parent_id: parentId,
+              amount_cents: amountCents,
+              method: "stripe",
+              stripe_payment_id: session.payment_intent,
+              notes: "T-shirt order",
+            },
+            headers: { Prefer: "return=minimal" },
+          });
+
+          // Mark shirt order as paid
+          if (shirtOrderId) {
+            await supabaseQuery("shirt_orders", {
+              method: "PATCH",
+              body: { status: "paid", stripe_payment_id: session.payment_intent, updated_at: new Date().toISOString() },
+              filters: `&id=eq.${shirtOrderId}`,
+              headers: { Prefer: "return=minimal" },
+            });
+          }
+
+          console.log(`Shirt order paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
+          return { statusCode: 200, body: JSON.stringify({ received: true }) };
+        }
+
+        // ── Regular Camp Payment ──
+        // 1. Log payment
         await supabaseQuery("payment_log", {
           method: "POST",
           body: {
@@ -61,76 +130,37 @@ exports.handler = async (event) => {
             amount_cents: amountCents,
             method: "stripe",
             stripe_payment_id: session.payment_intent,
-            notes: isRegistrationFee ? "Registration fee" : `Stripe checkout ${session.id}`,
+            notes: `Stripe checkout ${session.id}`,
           },
           headers: { Prefer: "return=minimal" },
         });
 
-        // 2. Get or create family ledger
-        const ledgers = await supabaseQuery("family_ledger", {
-          filters: `&parent_id=eq.${parentId}`,
-        });
+        // 2. Update family ledger
+        const ledgers = await supabaseQuery("family_ledger", { filters: `&parent_id=eq.${parentId}` });
         const ledger = ledgers && ledgers[0];
-
-        if (isRegistrationFee) {
-          // Registration fee: mark as paid, don't touch total_paid_cents or registrations
-          if (ledger) {
-            await supabaseQuery("family_ledger", {
-              method: "PATCH",
-              body: {
-                registration_fee_paid: true,
-                updated_at: new Date().toISOString(),
-              },
-              filters: `&parent_id=eq.${parentId}`,
-              headers: { Prefer: "return=minimal" },
-            });
-          } else {
-            await supabaseQuery("family_ledger", {
-              method: "POST",
-              body: {
-                parent_id: parentId,
-                registration_fee_paid: true,
-                total_due_cents: 0,
-                total_paid_cents: 0,
-              },
-              headers: { Prefer: "return=minimal" },
-            });
-          }
-          console.log(`Registration fee paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
-        } else {
-          // Regular camp payment: update total_paid and confirm registrations
-          if (ledger) {
-            const newPaid = (ledger.total_paid_cents || 0) + amountCents;
-            await supabaseQuery("family_ledger", {
-              method: "PATCH",
-              body: {
-                total_paid_cents: newPaid,
-                updated_at: new Date().toISOString(),
-              },
-              filters: `&parent_id=eq.${parentId}`,
-              headers: { Prefer: "return=minimal" },
-            });
-          }
-
-          // 3. Confirm all pending registrations for this parent's children
-          const children = await supabaseQuery("children", {
+        if (ledger) {
+          const newPaid = (ledger.total_paid_cents || 0) + amountCents;
+          await supabaseQuery("family_ledger", {
+            method: "PATCH",
+            body: { total_paid_cents: newPaid, updated_at: new Date().toISOString() },
             filters: `&parent_id=eq.${parentId}`,
+            headers: { Prefer: "return=minimal" },
           });
-          if (children && children.length > 0) {
-            const childIds = children.map((c) => c.id);
-            await supabaseQuery("registrations", {
-              method: "PATCH",
-              body: {
-                status: "confirmed",
-                updated_at: new Date().toISOString(),
-              },
-              filters: `&child_id=in.(${childIds.join(",")})&status=eq.pending`,
-              headers: { Prefer: "return=minimal" },
-            });
-          }
-
-          console.log(`Payment completed for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
         }
+
+        // 3. Confirm pending registrations
+        const children = await supabaseQuery("children", { filters: `&parent_id=eq.${parentId}` });
+        if (children && children.length > 0) {
+          const childIds = children.map((c) => c.id);
+          await supabaseQuery("registrations", {
+            method: "PATCH",
+            body: { status: "confirmed", updated_at: new Date().toISOString() },
+            filters: `&child_id=in.(${childIds.join(",")})&status=eq.pending`,
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+
+        console.log(`Payment completed for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
       } catch (err) {
         console.error("Error processing payment:", err);
         return { statusCode: 500, body: `Processing error: ${err.message}` };

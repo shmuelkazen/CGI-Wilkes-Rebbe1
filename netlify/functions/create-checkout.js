@@ -41,55 +41,60 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { parentId, parentEmail, amountCents, siteUrl, isRegistrationFee } = JSON.parse(event.body);
+    const { parentId, parentEmail, amountCents, siteUrl, isRegistrationFee, isShirtOrder, shirtOrderId, shirtDescription } = JSON.parse(event.body);
 
     if (!parentId || !amountCents || amountCents <= 0) {
       return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Parent ID and amount are required" }) };
     }
 
-    // Fetch parent info
     const parents = await supabaseQuery("parents", { filters: `&id=eq.${parentId}` });
     const parent = parents && parents[0];
     const email = parentEmail || parent?.email || "";
-
     const baseUrl = siteUrl || process.env.SITE_URL || "https://comforting-custard-5d02c6.netlify.app";
 
-    // Registration fee — simple checkout, no need to look up children/registrations
+    // ── Registration Fee ──
     if (isRegistrationFee) {
       const checkoutSession = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
-        line_items: [
-          {
-            price_data: {
-              currency: "usd",
-              product_data: {
-                name: "CGI Wilkes Rebbe — Registration Fee",
-                description: "One-time family registration fee",
-              },
-              unit_amount: amountCents,
-            },
-            quantity: 1,
+        line_items: [{
+          price_data: {
+            currency: "usd",
+            product_data: { name: "CGI Wilkes Rebbe — Registration Fee", description: "One-time family registration fee" },
+            unit_amount: amountCents,
           },
-        ],
+          quantity: 1,
+        }],
         mode: "payment",
         customer_email: email,
         success_url: `${baseUrl}?payment=success`,
         cancel_url: `${baseUrl}?payment=cancelled`,
-        metadata: {
-          parent_id: parentId,
-          amount_cents: String(amountCents),
-          is_registration_fee: "true",
-        },
+        metadata: { parent_id: parentId, amount_cents: String(amountCents), is_registration_fee: "true" },
       });
-
-      return {
-        statusCode: 200,
-        headers: corsHeaders,
-        body: JSON.stringify({ url: checkoutSession.url }),
-      };
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ url: checkoutSession.url }) };
     }
 
-    // Regular camp payment — existing logic unchanged
+    // ── T-Shirt Order ──
+    if (isShirtOrder) {
+      const checkoutSession = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [{
+          price_data: {
+            currency: "usd",
+            product_data: { name: "CGI Wilkes Rebbe — T-Shirt", description: shirtDescription || "T-shirt order" },
+            unit_amount: amountCents,
+          },
+          quantity: 1,
+        }],
+        mode: "payment",
+        customer_email: email,
+        success_url: `${baseUrl}?payment=success`,
+        cancel_url: `${baseUrl}?payment=cancelled`,
+        metadata: { parent_id: parentId, amount_cents: String(amountCents), is_shirt_order: "true", shirt_order_id: shirtOrderId || "" },
+      });
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ url: checkoutSession.url }) };
+    }
+
+    // ── Regular Camp Payment ──
     const children = await supabaseQuery("children", { filters: `&parent_id=eq.${parentId}` });
     const childNames = (children || []).map((c) => `${c.first_name} ${c.last_name}`).join(", ");
 
@@ -103,15 +108,10 @@ exports.handler = async (event) => {
 
     const divisionIds = [...new Set(registrations.map((r) => r.division_id).filter(Boolean))];
     const weekIds = [...new Set(registrations.map((r) => r.week_id).filter(Boolean))];
-
     let divisions = [];
     let weeks = [];
-    if (divisionIds.length > 0) {
-      divisions = await supabaseQuery("divisions", { filters: `&id=in.(${divisionIds.join(",")})` }) || [];
-    }
-    if (weekIds.length > 0) {
-      weeks = await supabaseQuery("division_weeks", { filters: `&id=in.(${weekIds.join(",")})` }) || [];
-    }
+    if (divisionIds.length > 0) divisions = await supabaseQuery("divisions", { filters: `&id=in.(${divisionIds.join(",")})` }) || [];
+    if (weekIds.length > 0) weeks = await supabaseQuery("division_weeks", { filters: `&id=in.(${weekIds.join(",")})` }) || [];
     const divMap = Object.fromEntries(divisions.map((d) => [d.id, d]));
     const weekMap = Object.fromEntries(weeks.map((w) => [w.id, w]));
     const childMap = Object.fromEntries((children || []).map((c) => [c.id, c]));
@@ -125,40 +125,24 @@ exports.handler = async (event) => {
 
     const checkoutSession = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: `CGI Wilkes Rebbe — ${childNames || "Camp Registration"}`,
-              description: description || "Camp registration payment",
-            },
-            unit_amount: amountCents,
-          },
-          quantity: 1,
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: { name: `CGI Wilkes Rebbe — ${childNames || "Camp Registration"}`, description: description || "Camp registration payment" },
+          unit_amount: amountCents,
         },
-      ],
+        quantity: 1,
+      }],
       mode: "payment",
       customer_email: email,
       success_url: `${baseUrl}?payment=success`,
       cancel_url: `${baseUrl}?payment=cancelled`,
-      metadata: {
-        parent_id: parentId,
-        amount_cents: String(amountCents),
-      },
+      metadata: { parent_id: parentId, amount_cents: String(amountCents) },
     });
 
-    return {
-      statusCode: 200,
-      headers: corsHeaders,
-      body: JSON.stringify({ url: checkoutSession.url }),
-    };
+    return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ url: checkoutSession.url }) };
   } catch (err) {
     console.error("Checkout error:", err);
-    return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: err.message }),
-    };
+    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message }) };
   }
 };

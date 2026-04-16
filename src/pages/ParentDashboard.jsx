@@ -35,6 +35,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [feeOverrideCode, setFeeOverrideCode] = useState("");
   const [feeOverrideError, setFeeOverrideError] = useState("");
   const [payingFee, setPayingFee] = useState(false);
+  const [shirtOrders, setShirtOrders] = useState([]);
+  const [shirtCart, setShirtCart] = useState({});
 
   const load = useCallback(async () => {
     try {
@@ -73,6 +75,12 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         const led = await sb.query("family_ledger", { filters: `&parent_id=eq.${user.id}`, single: true });
         setLedger(led);
       } catch { setLedger(null); }
+
+      // Load shirt orders
+      try {
+        const shirts = await sb.query("shirt_orders", { filters: `&parent_id=eq.${user.id}&order=created_at.desc` });
+        setShirtOrders(shirts || []);
+      } catch { setShirtOrders([]); }
 
       // Check if address is missing
       if (p && (!p.address || !p.address.trim())) {
@@ -264,6 +272,45 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       setFeeOverrideCode("");
       setFeeOverrideError("");
       load();
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  // Shirt config from settings
+  const shirtOrderingOpen = settings?.shirt_ordering_open === true;
+  const shirtPriceCents = settings?.shirt_price_cents ?? 0;
+  const shirtSizes = ["YXS","YS","YM","YL","YXL","AS","AM","AL","AXL","A2XL"];
+
+  const handleOrderShirt = async (childId, size, quantity) => {
+    if (!shirtPriceCents || shirtPriceCents <= 0) return alert("Shirt pricing not configured yet.");
+    const totalCents = shirtPriceCents * quantity;
+    const child = children.find((c) => c.id === childId);
+
+    try {
+      // Create pending order
+      const orderResp = await sb.query("shirt_orders", {
+        method: "POST",
+        body: { parent_id: user.id, child_id: childId, size, quantity, price_cents: totalCents, status: "pending" },
+        headers: { Prefer: "return=representation" },
+      });
+      const order = Array.isArray(orderResp) ? orderResp[0] : orderResp;
+
+      // Redirect to Stripe
+      const res = await fetch("/.netlify/functions/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentId: user.id,
+          parentEmail: user.email,
+          amountCents: totalCents,
+          siteUrl: window.location.origin,
+          isShirtOrder: true,
+          shirtOrderId: order?.id,
+          shirtDescription: `${child?.first_name || "Camper"} — ${size} × ${quantity}`,
+        }),
+      });
+      const data = await res.json();
+      if (data.url) { window.location.href = data.url; }
+      else { alert(data.error || "Failed to create checkout."); }
     } catch (e) { alert("Error: " + e.message); }
   };
 
@@ -470,6 +517,68 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
             </div>
           )}
         </div>
+
+        {/* T-Shirts */}
+        {shirtOrderingOpen && children.length > 0 && registrations.some((r) => r.status !== "cancelled") && (
+          <div style={{ marginBottom: 32 }}>
+            <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>T-Shirts</h2>
+            <div style={{ display: "grid", gap: 12 }}>
+              {children.filter((c) => registrations.some((r) => r.child_id === c.id && r.status !== "cancelled")).map((child) => {
+                const childShirtOrders = shirtOrders.filter((o) => o.child_id === child.id && o.status !== "cancelled");
+                const cart = shirtCart[child.id] || { size: child.tshirt_size || "YM", quantity: 1 };
+                const setCart = (updates) => setShirtCart((prev) => ({ ...prev, [child.id]: { ...cart, ...updates } }));
+
+                return (
+                  <div key={child.id} style={s.card}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{child.first_name} {child.last_name}</div>
+
+                        {/* Existing orders */}
+                        {childShirtOrders.length > 0 && (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                            {childShirtOrders.map((o) => (
+                              <span key={o.id} style={{ ...s.badge(o.status === "paid" || o.status === "fulfilled" ? colors.success : colors.amber), fontSize: 11 }}>
+                                {o.status === "paid" || o.status === "fulfilled" ? "✓" : "○"} {o.size} × {o.quantity} — ${(o.price_cents / 100).toFixed(0)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Order form */}
+                        <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" }}>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: colors.textMid, display: "block", marginBottom: 4 }}>Size</label>
+                            <select style={{ ...s.input, width: 100 }} value={cart.size} onChange={(e) => setCart({ size: e.target.value })}>
+                              {shirtSizes.map((sz) => <option key={sz} value={sz}>{sz}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: colors.textMid, display: "block", marginBottom: 4 }}>Qty</label>
+                            <select style={{ ...s.input, width: 60 }} value={cart.quantity} onChange={(e) => setCart({ quantity: parseInt(e.target.value) })}>
+                              {[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                          </div>
+                          <button
+                            onClick={() => handleOrderShirt(child.id, cart.size, cart.quantity)}
+                            style={{ ...s.btn("primary"), padding: "9px 16px", fontSize: 13 }}
+                          >
+                            Order & Pay ${((shirtPriceCents * cart.quantity) / 100).toFixed(0)}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {shirtPriceCents > 0 && (
+              <div style={{ fontSize: 12, color: colors.textLight, marginTop: 8 }}>
+                ${(shirtPriceCents / 100).toFixed(0)} per shirt · Payment is required at time of order
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ELRC / Childcare Subsidy */}
         <div style={{ ...s.card, marginBottom: 24, border: parent?.elrc_status ? `2px solid ${colors.success}` : `1px solid ${colors.border}` }}>

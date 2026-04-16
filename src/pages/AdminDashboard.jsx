@@ -714,6 +714,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const [ledgers, setLedgers] = useState([]);
   const [settings, setSettings] = useState({});
   const [discountCodes, setDiscountCodes] = useState([]);
+  const [shirtOrders, setShirtOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterDivision, setFilterDivision] = useState("all");
@@ -734,7 +735,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
 
   const load = useCallback(async () => {
     try {
-      const [reg, divs, wks, ch, par, codes, ledg, settingsRows] = await Promise.all([
+      const [reg, divs, wks, ch, par, codes, ledg, settingsRows, shirts] = await Promise.all([
         sb.query("registrations", { select: "*", filters: "&order=created_at.desc" }),
         sb.query("divisions", { filters: "&order=sort_order.asc" }),
         sb.query("division_weeks", { filters: "&order=sort_order.asc" }),
@@ -743,6 +744,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
         sb.query("discount_codes", { filters: "&order=created_at.desc" }).catch(() => []),
         sb.query("family_ledger").catch(() => []),
         sb.query("camp_settings").catch(() => []),
+        sb.query("shirt_orders", { filters: "&order=created_at.desc" }).catch(() => []),
       ]);
       setRegistrations(reg || []);
       setDivisions(divs || []);
@@ -751,6 +753,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
       setParents(par || []);
       setDiscountCodes(codes || []);
       setLedgers(ledg || []);
+      setShirtOrders(shirts || []);
 
       const st = {};
       (settingsRows || []).forEach((row) => {
@@ -1044,6 +1047,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
             { key: "divisions", label: "Divisions & Weeks", icon: Icons.calendar },
             { key: "families", label: "Families", icon: Icons.users },
             { key: "discounts", label: "Discounts", icon: Icons.dollar },
+            { key: "shirts", label: "T-Shirts", icon: Icons.clipboard },
             { key: "settings", label: "Settings", icon: Icons.shield },
           ].map((t) => (
             <button key={t.key} onClick={() => t.key === "settings" ? setSettingsModal(true) : setTab(t.key)} style={{
@@ -1301,6 +1305,144 @@ export default function AdminDashboard({ user, setView, showToast }) {
             )}
           </div>
         )}
+
+        {/* ═══ T-SHIRTS TAB ═══ */}
+        {tab === "shirts" && (
+          <div>
+            {/* Shirt Config */}
+            <div style={{ ...s.card, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>T-Shirt Settings</div>
+                  <div style={{ fontSize: 13, color: colors.textMid }}>
+                    Price: ${((settings.shirt_price_cents || 0) / 100).toFixed(0)} per shirt · Ordering: {settings.shirt_ordering_open ? "Open" : "Closed"}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "end" }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: colors.textMid, display: "block", marginBottom: 4 }}>Price (cents)</label>
+                    <input type="number" style={{ ...s.input, width: 100 }}
+                      value={settings.shirt_price_cents ?? ""}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        try {
+                          const existing = await sb.query("camp_settings", { filters: "&key=eq.shirt_price_cents" });
+                          if (existing && existing.length > 0) {
+                            await sb.query("camp_settings", { method: "PATCH", body: { value: JSON.stringify(Number(val)), updated_at: new Date().toISOString() }, filters: "&key=eq.shirt_price_cents", headers: { Prefer: "return=minimal" } });
+                          } else {
+                            await sb.query("camp_settings", { method: "POST", body: { key: "shirt_price_cents", value: JSON.stringify(Number(val)) }, headers: { Prefer: "return=minimal" } });
+                          }
+                          load();
+                        } catch (err) { console.error(err); }
+                      }}
+                      min={0} step={100} placeholder="e.g. 1500"
+                    />
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const newVal = !settings.shirt_ordering_open;
+                      try {
+                        const existing = await sb.query("camp_settings", { filters: "&key=eq.shirt_ordering_open" });
+                        if (existing && existing.length > 0) {
+                          await sb.query("camp_settings", { method: "PATCH", body: { value: JSON.stringify(newVal), updated_at: new Date().toISOString() }, filters: "&key=eq.shirt_ordering_open", headers: { Prefer: "return=minimal" } });
+                        } else {
+                          await sb.query("camp_settings", { method: "POST", body: { key: "shirt_ordering_open", value: JSON.stringify(newVal) }, headers: { Prefer: "return=minimal" } });
+                        }
+                        showToast(newVal ? "Ordering opened!" : "Ordering closed.");
+                        load();
+                      } catch (err) { alert("Error: " + err.message); }
+                    }}
+                    style={s.btn(settings.shirt_ordering_open ? "secondary" : "primary")}
+                  >
+                    {settings.shirt_ordering_open ? "Close Ordering" : "Open Ordering"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Orders Table */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ fontSize: 14, color: colors.textMid }}>{shirtOrders.length} order{shirtOrders.length !== 1 ? "s" : ""}</div>
+              <button onClick={() => {
+                const rows = [["Child", "Parent", "Email", "Size", "Qty", "Price", "Status", "Date"]];
+                shirtOrders.forEach((o) => {
+                  const c = childMap[o.child_id];
+                  const p = c ? parentMap[c.parent_id] : parentMap[o.parent_id] || {};
+                  rows.push([
+                    `${c?.first_name || ""} ${c?.last_name || ""}`, p?.full_name || "", p?.email || "",
+                    o.size, o.quantity, `$${(o.price_cents / 100).toFixed(0)}`, o.status,
+                    new Date(o.created_at).toLocaleDateString(),
+                  ]);
+                });
+                const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+                const blob = new Blob([csv], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = `cgi-shirt-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+                a.click(); URL.revokeObjectURL(url);
+                showToast("Exported!");
+              }} style={s.btn("secondary")}>{Icons.download({ size: 14 })} Export CSV</button>
+            </div>
+
+            {shirtOrders.length === 0 ? (
+              <div style={s.card}>
+                <EmptyState icon={Icons.clipboard} title="No shirt orders yet" sub="Orders will appear here when parents order t-shirts." />
+              </div>
+            ) : (
+              <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
+                      {["Child", "Parent", "Size", "Qty", "Price", "Status", "Date", "Actions"].map((h) => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shirtOrders.map((o) => {
+                      const c = childMap[o.child_id];
+                      const p = c ? parentMap[c.parent_id] : parentMap[o.parent_id] || {};
+                      return (
+                        <tr key={o.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
+                          <td style={{ padding: "10px 14px", fontWeight: 600 }}>{c?.first_name} {c?.last_name}</td>
+                          <td style={{ padding: "10px 14px" }}>{p?.full_name}<div style={{ fontSize: 12, color: colors.textMid }}>{p?.email}</div></td>
+                          <td style={{ padding: "10px 14px", fontWeight: 600 }}>{o.size}</td>
+                          <td style={{ padding: "10px 14px" }}>{o.quantity}</td>
+                          <td style={{ padding: "10px 14px" }}>${(o.price_cents / 100).toFixed(0)}</td>
+                          <td style={{ padding: "10px 14px" }}><StatusBadge status={o.status === "fulfilled" ? "confirmed" : o.status} /></td>
+                          <td style={{ padding: "10px 14px", fontSize: 13, color: colors.textMid }}>{new Date(o.created_at).toLocaleDateString()}</td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              {o.status === "paid" && (
+                                <button onClick={async () => {
+                                  try {
+                                    await sb.query("shirt_orders", { method: "PATCH", body: { status: "fulfilled", updated_at: new Date().toISOString() }, filters: `&id=eq.${o.id}`, headers: { Prefer: "return=minimal" } });
+                                    showToast("Marked as fulfilled!");
+                                    load();
+                                  } catch (e) { alert("Error: " + e.message); }
+                                }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Fulfilled</button>
+                              )}
+                              {o.status === "pending" && (
+                                <button onClick={async () => {
+                                  if (!window.confirm("Delete this unpaid order?")) return;
+                                  try {
+                                    await sb.query("shirt_orders", { method: "DELETE", filters: `&id=eq.${o.id}` });
+                                    showToast("Order deleted.");
+                                    load();
+                                  } catch (e) { alert("Error: " + e.message); }
+                                }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.trash({ size: 13, color: colors.coral })}</button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -1382,7 +1524,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
           onClose={() => { setAdminChildModal(null); setAdminChildParentId(null); }}
           onSave={handleSaveAdminChild}
           saving={saving}
-        /> 
+        />
       )}
     </div>
   );
