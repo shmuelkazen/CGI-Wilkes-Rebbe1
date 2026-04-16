@@ -107,14 +107,17 @@ exports.handler = async (event) => {
             headers: { Prefer: "return=minimal" },
           });
 
-          // Mark shirt order as paid
+          // Mark shirt order(s) as paid — shirtOrderId can be comma-separated for batch orders
           if (shirtOrderId) {
-            await supabaseQuery("shirt_orders", {
-              method: "PATCH",
-              body: { status: "paid", stripe_payment_id: session.payment_intent, updated_at: new Date().toISOString() },
-              filters: `&id=eq.${shirtOrderId}`,
-              headers: { Prefer: "return=minimal" },
-            });
+            const orderIds = shirtOrderId.split(",").filter(Boolean);
+            for (const oid of orderIds) {
+              await supabaseQuery("shirt_orders", {
+                method: "PATCH",
+                body: { status: "paid", stripe_payment_id: session.payment_intent, updated_at: new Date().toISOString() },
+                filters: `&id=eq.${oid}`,
+                headers: { Prefer: "return=minimal" },
+              });
+            }
           }
 
           console.log(`Shirt order paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);

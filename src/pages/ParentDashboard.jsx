@@ -280,21 +280,36 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const shirtPriceCents = settings?.shirt_price_cents ?? 0;
   const shirtSizes = ["YXS","YS","YM","YL","YXL","AS","AM","AL","AXL","A2XL"];
 
-  const handleOrderShirt = async (childId, size, quantity) => {
+  const handleOrderShirts = async () => {
     if (!shirtPriceCents || shirtPriceCents <= 0) return alert("Shirt pricing not configured yet.");
-    const totalCents = shirtPriceCents * quantity;
-    const child = children.find((c) => c.id === childId);
+    
+    // Build list of items from cart where quantity > 0
+    const registeredChildren = children.filter((c) => registrations.some((r) => r.child_id === c.id && r.status !== "cancelled"));
+    const items = registeredChildren.map((child) => {
+      const cart = shirtCart[child.id] || { size: child.tshirt_size || "YM", quantity: 0 };
+      if (!cart.quantity || cart.quantity <= 0) return null;
+      return { childId: child.id, childName: `${child.first_name} ${child.last_name}`, size: cart.size, quantity: cart.quantity };
+    }).filter(Boolean);
+
+    if (items.length === 0) return alert("Please select a quantity for at least one child.");
+
+    const totalCents = items.reduce((sum, item) => sum + (shirtPriceCents * item.quantity), 0);
+    const description = items.map((i) => `${i.childName} — ${i.size} × ${i.quantity}`).join(", ");
 
     try {
-      // Create pending order
-      const orderResp = await sb.query("shirt_orders", {
-        method: "POST",
-        body: { parent_id: user.id, child_id: childId, size, quantity, price_cents: totalCents, status: "pending" },
-        headers: { Prefer: "return=representation" },
-      });
-      const order = Array.isArray(orderResp) ? orderResp[0] : orderResp;
+      // Create pending orders for each child
+      const orderIds = [];
+      for (const item of items) {
+        const orderResp = await sb.query("shirt_orders", {
+          method: "POST",
+          body: { parent_id: user.id, child_id: item.childId, size: item.size, quantity: item.quantity, price_cents: shirtPriceCents * item.quantity, status: "pending" },
+          headers: { Prefer: "return=representation" },
+        });
+        const order = Array.isArray(orderResp) ? orderResp[0] : orderResp;
+        if (order?.id) orderIds.push(order.id);
+      }
 
-      // Redirect to Stripe
+      // One Stripe checkout for the total
       const res = await fetch("/.netlify/functions/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -304,8 +319,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
           amountCents: totalCents,
           siteUrl: window.location.origin,
           isShirtOrder: true,
-          shirtOrderId: order?.id,
-          shirtDescription: `${child?.first_name || "Camper"} — ${size} × ${quantity}`,
+          shirtOrderId: orderIds.join(","),
+          shirtDescription: description,
         }),
       });
       const data = await res.json();
@@ -519,20 +534,30 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         </div>
 
         {/* T-Shirts */}
-        {shirtOrderingOpen && children.length > 0 && registrations.some((r) => r.status !== "cancelled") && (
-          <div style={{ marginBottom: 32 }}>
-            <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>T-Shirts</h2>
-            <div style={{ display: "grid", gap: 12 }}>
-              {children.filter((c) => registrations.some((r) => r.child_id === c.id && r.status !== "cancelled")).map((child) => {
-                const childShirtOrders = shirtOrders.filter((o) => o.child_id === child.id && o.status !== "cancelled");
-                const cart = shirtCart[child.id] || { size: child.tshirt_size || "YM", quantity: 1 };
-                const setCart = (updates) => setShirtCart((prev) => ({ ...prev, [child.id]: { ...cart, ...updates } }));
+        {shirtOrderingOpen && children.length > 0 && registrations.some((r) => r.status !== "cancelled") && (() => {
+          const registeredChildren = children.filter((c) => registrations.some((r) => r.child_id === c.id && r.status !== "cancelled"));
+          const cartTotal = registeredChildren.reduce((sum, child) => {
+            const cart = shirtCart[child.id] || { size: child.tshirt_size || "YM", quantity: 0 };
+            return sum + (shirtPriceCents * (cart.quantity || 0));
+          }, 0);
+          const cartCount = registeredChildren.reduce((sum, child) => {
+            const cart = shirtCart[child.id] || { quantity: 0 };
+            return sum + (cart.quantity || 0);
+          }, 0);
 
-                return (
-                  <div key={child.id} style={s.card}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-                      <div style={{ flex: 1, minWidth: 200 }}>
-                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{child.first_name} {child.last_name}</div>
+          return (
+            <div style={{ marginBottom: 32 }}>
+              <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>T-Shirts</h2>
+              <div style={s.card}>
+                <div style={{ display: "grid", gap: 16 }}>
+                  {registeredChildren.map((child) => {
+                    const childShirtOrders = shirtOrders.filter((o) => o.child_id === child.id && o.status !== "cancelled");
+                    const cart = shirtCart[child.id] || { size: child.tshirt_size || "YM", quantity: 0 };
+                    const setCart = (updates) => setShirtCart((prev) => ({ ...prev, [child.id]: { ...cart, ...updates } }));
+
+                    return (
+                      <div key={child.id} style={{ paddingBottom: 16, borderBottom: `1px solid ${colors.borderLight}` }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{child.first_name} {child.last_name}</div>
 
                         {/* Existing orders */}
                         {childShirtOrders.length > 0 && (
@@ -545,7 +570,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                           </div>
                         )}
 
-                        {/* Order form */}
+                        {/* Size & Qty pickers */}
                         <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" }}>
                           <div>
                             <label style={{ fontSize: 11, fontWeight: 600, color: colors.textMid, display: "block", marginBottom: 4 }}>Size</label>
@@ -556,29 +581,40 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                           <div>
                             <label style={{ fontSize: 11, fontWeight: 600, color: colors.textMid, display: "block", marginBottom: 4 }}>Qty</label>
                             <select style={{ ...s.input, width: 60 }} value={cart.quantity} onChange={(e) => setCart({ quantity: parseInt(e.target.value) })}>
-                              {[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}</option>)}
+                              {[0,1,2,3,4,5].map((n) => <option key={n} value={n}>{n}</option>)}
                             </select>
                           </div>
-                          <button
-                            onClick={() => handleOrderShirt(child.id, cart.size, cart.quantity)}
-                            style={{ ...s.btn("primary"), padding: "9px 16px", fontSize: 13 }}
-                          >
-                            Order & Pay ${((shirtPriceCents * cart.quantity) / 100).toFixed(0)}
-                          </button>
+                          {cart.quantity > 0 && (
+                            <span style={{ fontSize: 13, color: colors.textMid, paddingBottom: 10 }}>${((shirtPriceCents * cart.quantity) / 100).toFixed(0)}</span>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    );
+                  })}
+                </div>
+
+                {/* Cart total and single checkout button */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
+                  <div style={{ fontSize: 13, color: colors.textLight }}>
+                    ${(shirtPriceCents / 100).toFixed(0)} per shirt · Payment required at time of order
                   </div>
-                );
-              })}
-            </div>
-            {shirtPriceCents > 0 && (
-              <div style={{ fontSize: 12, color: colors.textLight, marginTop: 8 }}>
-                ${(shirtPriceCents / 100).toFixed(0)} per shirt · Payment is required at time of order
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {cartCount > 0 && (
+                      <span style={{ fontSize: 14, color: colors.textMid }}>{cartCount} shirt{cartCount !== 1 ? "s" : ""}</span>
+                    )}
+                    <button
+                      onClick={handleOrderShirts}
+                      disabled={cartCount === 0}
+                      style={{ ...s.btn("primary"), padding: "10px 20px", fontSize: 14, opacity: cartCount > 0 ? 1 : 0.5 }}
+                    >
+                      {cartCount > 0 ? `Order & Pay $${(cartTotal / 100).toFixed(0)}` : "Select shirts to order"}
+                    </button>
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
         {/* ELRC / Childcare Subsidy */}
         <div style={{ ...s.card, marginBottom: 24, border: parent?.elrc_status ? `2px solid ${colors.success}` : `1px solid ${colors.border}` }}>
