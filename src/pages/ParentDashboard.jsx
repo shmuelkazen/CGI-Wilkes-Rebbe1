@@ -32,6 +32,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [addressForm, setAddressForm] = useState({ address: "", phone: "" });
   const [needsAddress, setNeedsAddress] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [paymentMode, setPaymentMode] = useState("full");
+  const [customAmount, setCustomAmount] = useState("");
   const [feeOverrideCode, setFeeOverrideCode] = useState("");
   const [feeOverrideError, setFeeOverrideError] = useState("");
   const [payingFee, setPayingFee] = useState(false);
@@ -443,8 +445,59 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                 </div>
               )}
             </div>
+
+            {/* Payment Mode Toggle */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+              <button
+                onClick={() => { setPaymentMode("full"); setCustomAmount(""); }}
+                style={{
+                  ...s.btn(paymentMode === "full" ? "primary" : "secondary"),
+                  padding: "8px 16px", fontSize: 14,
+                }}
+              >
+                Pay in Full — ${(balanceDue / 100).toFixed(0)}
+              </button>
+              <button
+                onClick={() => setPaymentMode("custom")}
+                style={{
+                  ...s.btn(paymentMode === "custom" ? "primary" : "secondary"),
+                  padding: "8px 16px", fontSize: 14,
+                }}
+              >
+                Partial Payment
+              </button>
+            </div>
+
+            {/* Custom Amount Input */}
+            {paymentMode === "custom" && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: colors.textMid, display: "block", marginBottom: 4 }}>Amount to Pay (min $50)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: colors.forest }}>$</span>
+                  <input
+                    type="number"
+                    min="50"
+                    max={balanceDue / 100}
+                    step="1"
+                    style={{ ...s.input, width: 140, fontSize: 18, fontWeight: 700 }}
+                    value={customAmount}
+                    onChange={(e) => setCustomAmount(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Pay Button */}
             <button
               onClick={async () => {
+                let amountCents = balanceDue;
+                if (paymentMode === "custom") {
+                  const dollars = parseFloat(customAmount);
+                  if (!dollars || dollars < 50) return alert("Minimum payment is $50.");
+                  if (dollars * 100 > balanceDue) return alert("Amount exceeds your balance.");
+                  amountCents = Math.round(dollars * 100);
+                }
                 setPaying(true);
                 try {
                   const res = await fetch("/.netlify/functions/create-checkout", {
@@ -453,7 +506,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                     body: JSON.stringify({
                       parentId: user.id,
                       parentEmail: user.email,
-                      amountCents: balanceDue,
+                      amountCents,
                       siteUrl: window.location.origin,
                     }),
                   });
@@ -466,7 +519,9 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               disabled={paying}
               style={{ ...s.btn("primary"), padding: "10px 28px", fontSize: 15 }}
             >
-              {paying ? <Spinner size={16} /> : `Pay $${(balanceDue / 100).toFixed(0)} Now`}
+              {paying ? <Spinner size={16} /> : paymentMode === "custom" && customAmount
+                ? `Pay $${parseFloat(customAmount).toFixed(0)} Now`
+                : `Pay $${(balanceDue / 100).toFixed(0)} Now`}
             </button>
           </div>
         )}

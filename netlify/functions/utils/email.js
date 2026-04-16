@@ -241,7 +241,7 @@ function registrationFeeReceiptEmail({ parentName }) {
   const body = `
     <h2 ${styles.heading}>Registration Fee Received</h2>
     <p ${styles.text}>Hi ${parentName},</p>
-    <p ${styles.text}>We've received your $45 registration fee. Your family is now registered for ${CAMP_NAME}!</p>
+    <p ${styles.text}>We've received your $45 registration fee. You can now register your child(ren) for camp sessions at ${CAMP_NAME}!</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
         <td style="padding:12px 16px; background-color:#e6f4ea; border-radius:8px; border: 1px solid #c8e6c9;">
