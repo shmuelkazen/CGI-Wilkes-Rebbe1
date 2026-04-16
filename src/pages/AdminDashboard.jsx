@@ -19,6 +19,9 @@ function DivisionModal({ division, onClose, onSave, saving }) {
     max_grade: division?.max_grade ?? "",
     schedule_type: division?.schedule_type || "full_day",
     per_week_price: division?.per_week_price ?? 35000,
+    elrc_weekly_price: division?.elrc_weekly_price ?? "",
+    early_bird_discount_cents: division?.early_bird_discount_cents ?? "",
+    full_summer_discount_cents: division?.full_summer_discount_cents ?? "",
     sort_order: division?.sort_order ?? 0,
     active: division?.active ?? true,
   });
@@ -58,6 +61,24 @@ function DivisionModal({ division, onClose, onSave, saving }) {
             <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.per_week_price / 100).toFixed(2)}</span>
           </div>
         </Field>
+        <Field label="ELRC/Childcare Rate (cents)">
+          <div style={{ position: "relative" }}>
+            <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.elrc_weekly_price} onChange={(e) => set("elrc_weekly_price", e.target.value)} placeholder="Leave blank if N/A" min={0} step={100} />
+            {form.elrc_weekly_price && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.elrc_weekly_price / 100).toFixed(2)}</span>}
+          </div>
+        </Field>
+        <Field label="Early Bird Discount (cents/week)">
+          <div style={{ position: "relative" }}>
+            <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.early_bird_discount_cents} onChange={(e) => set("early_bird_discount_cents", e.target.value)} placeholder="e.g. 4000 = $40 off" min={0} step={100} />
+            {form.early_bird_discount_cents && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.early_bird_discount_cents / 100).toFixed(2)} off</span>}
+          </div>
+        </Field>
+        <Field label="Full Summer Discount (cents/week)">
+          <div style={{ position: "relative" }}>
+            <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.full_summer_discount_cents} onChange={(e) => set("full_summer_discount_cents", e.target.value)} placeholder="e.g. 1000 = $10 off" min={0} step={100} />
+            {form.full_summer_discount_cents && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.full_summer_discount_cents / 100).toFixed(2)} off</span>}
+          </div>
+        </Field>
         <Field label="Sort Order">
           <input type="number" style={s.input} value={form.sort_order} onChange={(e) => set("sort_order", e.target.value)} min={0} />
         </Field>
@@ -80,6 +101,9 @@ function DivisionModal({ division, onClose, onSave, saving }) {
             max_grade: form.max_grade !== "" ? Number(form.max_grade) : null,
             schedule_type: form.schedule_type,
             per_week_price: Number(form.per_week_price),
+            elrc_weekly_price: form.elrc_weekly_price !== "" ? Number(form.elrc_weekly_price) : null,
+            early_bird_discount_cents: form.early_bird_discount_cents !== "" ? Number(form.early_bird_discount_cents) : null,
+            full_summer_discount_cents: form.full_summer_discount_cents !== "" ? Number(form.full_summer_discount_cents) : null,
             sort_order: Number(form.sort_order),
             active: form.active,
           });
@@ -234,32 +258,80 @@ function SettingsModal({ settings, onClose, onSave, saving }) {
     camp_name: settings.camp_name || "CGI Wilkes Rebbe",
     camp_season: settings.camp_season || "Summer 2026",
     early_bird_deadline: settings.early_bird_deadline || "",
-    early_bird_discount_percent: settings.early_bird_discount_percent ?? 10,
-    sibling_discount_type: settings.sibling_discount_type || "per_child",
-    sibling_discount_value: settings.sibling_discount_value ?? 5,
+    sibling_discount_cents: settings.sibling_discount_cents ?? 1500,
     sibling_discount_starts_at: settings.sibling_discount_starts_at ?? 2,
+    sibling_discount_elementary_only: settings.sibling_discount_elementary_only ?? true,
+    registration_fee_cents: settings.registration_fee_cents ?? 4500,
+    registration_fee_required: settings.registration_fee_required ?? true,
+    registration_fee_override_code: settings.registration_fee_override_code || "",
+    minimum_weekly_price_cents: settings.minimum_weekly_price_cents ?? 6500,
     registration_open: settings.registration_open ?? true,
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   return (
-    <Modal title="Camp Settings" onClose={onClose} width={500}>
+    <Modal title="Camp Settings" onClose={onClose} width={520}>
       <Field label="Camp Name"><input style={s.input} value={form.camp_name} onChange={(e) => set("camp_name", e.target.value)} /></Field>
       <Field label="Season Name"><input style={s.input} value={form.camp_season} onChange={(e) => set("camp_season", e.target.value)} /></Field>
+
+      {/* Registration Fee */}
       <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Early Bird Discount</div>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Registration Fee</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-          <Field label="Deadline"><input type="date" style={s.input} value={form.early_bird_deadline} onChange={(e) => set("early_bird_deadline", e.target.value)} /></Field>
-          <Field label="Discount %"><input type="number" style={s.input} value={form.early_bird_discount_percent} onChange={(e) => set("early_bird_discount_percent", e.target.value)} min={0} max={100} /></Field>
+          <Field label="Fee Amount (cents)">
+            <div style={{ position: "relative" }}>
+              <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.registration_fee_cents} onChange={(e) => set("registration_fee_cents", e.target.value)} min={0} step={100} />
+              {form.registration_fee_cents > 0 && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.registration_fee_cents / 100).toFixed(2)}</span>}
+            </div>
+          </Field>
+          <Field label="Override Code">
+            <input style={s.input} value={form.registration_fee_override_code} onChange={(e) => set("registration_fee_override_code", e.target.value.toUpperCase().replace(/\s/g, ""))} placeholder="e.g. FEEWAVED" />
+          </Field>
         </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", marginBottom: 4 }}>
+          <input type="checkbox" checked={form.registration_fee_required} onChange={(e) => set("registration_fee_required", e.target.checked)} />
+          Require registration fee before enrollment
+        </label>
+        <div style={{ fontSize: 12, color: colors.textLight, marginLeft: 26 }}>If enabled, families must pay the registration fee before they can register for weeks. Override code lets specific families skip it.</div>
       </div>
+
+      {/* Early Bird */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Early Bird Discount</div>
+        <div style={{ fontSize: 12, color: colors.textLight, marginBottom: 12 }}>Discount amounts are set per division in the Divisions tab. This is the deadline for paying in full to qualify.</div>
+        <Field label="Pay-in-Full Deadline"><input type="date" style={s.input} value={form.early_bird_deadline} onChange={(e) => set("early_bird_deadline", e.target.value)} /></Field>
+      </div>
+
+      {/* Sibling Discount */}
       <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Sibling Discount</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-          <Field label="Discount % Per Sibling"><input type="number" style={s.input} value={form.sibling_discount_value} onChange={(e) => set("sibling_discount_value", e.target.value)} min={0} max={100} /></Field>
+          <Field label="Discount Per Sibling (cents/week)">
+            <div style={{ position: "relative" }}>
+              <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.sibling_discount_cents} onChange={(e) => set("sibling_discount_cents", e.target.value)} min={0} step={100} />
+              {form.sibling_discount_cents > 0 && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.sibling_discount_cents / 100).toFixed(2)}/wk</span>}
+            </div>
+          </Field>
           <Field label="Starts at Child #"><input type="number" style={s.input} value={form.sibling_discount_starts_at} onChange={(e) => set("sibling_discount_starts_at", e.target.value)} min={2} /></Field>
         </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+          <input type="checkbox" checked={form.sibling_discount_elementary_only} onChange={(e) => set("sibling_discount_elementary_only", e.target.checked)} />
+          Elementary divisions only (exclude preschool)
+        </label>
       </div>
+
+      {/* Minimum Price Floor */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Minimum Weekly Price</div>
+        <div style={{ fontSize: 12, color: colors.textLight, marginBottom: 12 }}>No matter how many discounts stack, the price per child per week will never go below this amount.</div>
+        <Field label="Floor (cents)">
+          <div style={{ position: "relative" }}>
+            <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.minimum_weekly_price_cents} onChange={(e) => set("minimum_weekly_price_cents", e.target.value)} min={0} step={100} />
+            {form.minimum_weekly_price_cents > 0 && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.minimum_weekly_price_cents / 100).toFixed(2)}/wk</span>}
+          </div>
+        </Field>
+      </div>
+
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14, cursor: "pointer" }}>
         <input type="checkbox" checked={form.registration_open} onChange={(e) => set("registration_open", e.target.checked)} /> Registration Open
       </label>
@@ -507,6 +579,7 @@ function FamilyEditModal({ parent, familyChildren, divisions, onClose, onSavePar
     full_name: parent?.full_name || "",
     phone: parent?.phone || "",
     address: parent?.address || "",
+    elrc_status: parent?.elrc_status ?? false,
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -537,6 +610,15 @@ function FamilyEditModal({ parent, familyChildren, divisions, onClose, onSavePar
         </Field>
       </div>
       <Field label="Address"><input style={s.input} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="Street, City, State ZIP" /></Field>
+
+      {/* ELRC Status */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", marginBottom: 4 }}>
+          <input type="checkbox" checked={form.elrc_status} onChange={(e) => set("elrc_status", e.target.checked)} />
+          <strong>ELRC / Childcare Subsidy</strong>
+        </label>
+        <div style={{ fontSize: 12, color: colors.textLight, marginLeft: 26 }}>This family receives ELRC childcare subsidies and will be charged the reduced rate. If subsidy funds do not come through, the family is responsible for the full amount.</div>
+      </div>
 
       {/* Additional Email Recipients */}
       <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
@@ -608,6 +690,7 @@ function FamilyEditModal({ parent, familyChildren, divisions, onClose, onSavePar
             full_name: form.full_name.trim(),
             phone: form.phone.trim(),
             address: form.address.trim(),
+            elrc_status: form.elrc_status,
             additional_emails: JSON.stringify(emails),
           });
         }} disabled={saving} style={s.btn("primary")}>
