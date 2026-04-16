@@ -38,47 +38,78 @@ async function supabaseQuery(table, { method = "GET", body, filters = "", select
   return text ? JSON.parse(text) : null;
 }
 
-// ── Get parent email and name ────────────────────────────────
+// ── Get parent info from the `parents` table ─────────────────
 async function getParentInfo(parentId) {
   try {
-    const profiles = await supabaseQuery("parent_profiles", {
+    const parents = await supabaseQuery("parents", {
       filters: `&id=eq.${parentId}`,
-      select: "email,full_name",
+      select: "email,full_name,additional_emails",
     });
-    if (profiles && profiles[0]) {
+    if (parents && parents[0]) {
       return {
-        email: profiles[0].email,
-        name: profiles[0].full_name || "Camp Family",
+        email: parents[0].email,
+        name: parents[0].full_name || "Camp Family",
+        additionalEmails: parents[0].additional_emails || [],
       };
     }
   } catch (e) {
-    console.warn("Could not fetch parent profile:", e.message);
+    console.warn("Could not fetch parent info:", e.message);
   }
-  return { email: null, name: "Camp Family" };
+  return { email: null, name: "Camp Family", additionalEmails: [] };
 }
 
-// ── Get all email recipients for a parent ────────────────────
-async function getEmailRecipients(parentId, primaryEmail) {
+// ── Collect all email recipients ─────────────────────────────
+function getAllRecipients(parentInfo, fallbackEmail) {
   const recipients = new Set();
-  if (primaryEmail) recipients.add(primaryEmail);
 
-  try {
-    const children = await supabaseQuery("children", {
-      filters: `&parent_id=eq.${parentId}`,
-      select: "additional_email",
-    });
-    if (children) {
-      for (const child of children) {
-        if (child.additional_email) {
-          recipients.add(child.additional_email);
-        }
-      }
+  // Primary email from parents table
+  if (parentInfo.email) recipients.add(parentInfo.email);
+
+  // Fallback to Stripe customer email
+  if (fallbackEmail) recipients.add(fallbackEmail);
+
+  // Additional emails from parents.additional_emails (jsonb array)
+  if (Array.isArray(parentInfo.additionalEmails)) {
+    for (const entry of parentInfo.additionalEmails) {
+      // Could be array of strings or array of objects with .email
+      const addr = typeof entry === "string" ? entry : entry?.email;
+      if (addr) recipients.add(addr);
     }
-  } catch (e) {
-    // Column may not exist — fine
   }
 
   return [...recipients].filter(Boolean);
+}
+
+// ── Ensure family_ledger row exists (upsert) ─────────────────
+async function ensureLedgerExists(parentId) {
+  const ledgers = await supabaseQuery("family_ledger", {
+    filters: `&parent_id=eq.${parentId}`,
+  });
+
+  if (ledgers && ledgers.length > 0) {
+    return ledgers[0];
+  }
+
+  // No row — create one
+  console.log(`Creating family_ledger row for parent ${parentId}`);
+  await supabaseQuery("family_ledger", {
+    method: "POST",
+    body: {
+      parent_id: parentId,
+      total_due_cents: 0,
+      total_paid_cents: 0,
+      discount_amount_cents: 0,
+      registration_fee_paid: false,
+      balance_cleared: false,
+    },
+    headers: { Prefer: "return=minimal" },
+  });
+
+  // Fetch the newly created row
+  const newLedgers = await supabaseQuery("family_ledger", {
+    filters: `&parent_id=eq.${parentId}`,
+  });
+  return (newLedgers && newLedgers[0]) || null;
 }
 
 exports.handler = async (event) => {
@@ -112,7 +143,7 @@ exports.handler = async (event) => {
       try {
         // Get parent info for emails
         const parentInfo = await getParentInfo(parentId);
-        const recipientEmails = await getEmailRecipients(parentId, parentInfo.email || session.customer_email);
+        const recipientEmails = getAllRecipients(parentInfo, session.customer_email);
 
         // ── Registration Fee ───────────────────────────────
         if (isRegistrationFee) {
@@ -129,7 +160,8 @@ exports.handler = async (event) => {
             headers: { Prefer: "return=minimal" },
           });
 
-          // Mark fee as paid on ledger
+          // Ensure ledger exists, then mark fee as paid
+          await ensureLedgerExists(parentId);
           await supabaseQuery("family_ledger", {
             method: "PATCH",
             body: {
@@ -142,7 +174,7 @@ exports.handler = async (event) => {
 
           console.log(`Registration fee paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
 
-          // ── Send registration fee receipt email ──────────
+          // Send receipt email
           if (recipientEmails.length > 0) {
             const emailContent = registrationFeeReceiptEmail({
               parentName: parentInfo.name,
@@ -188,12 +220,12 @@ exports.handler = async (event) => {
 
           console.log(`Shirt order paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
 
-          // ── Send shirt order receipt email ────────────────
+          // Send receipt email
           if (recipientEmails.length > 0) {
             const emailContent = shirtOrderReceiptEmail({
               parentName: parentInfo.name,
               amountCents,
-              items: [], // We don't have item details in webhook metadata — kept simple
+              items: [],
             });
             await sendEmail({
               to: recipientEmails,
@@ -219,27 +251,20 @@ exports.handler = async (event) => {
           headers: { Prefer: "return=minimal" },
         });
 
-        // 2. Update family ledger
-        const ledgers = await supabaseQuery("family_ledger", {
-          filters: `&parent_id=eq.${parentId}`,
-        });
-        const ledger = ledgers && ledgers[0];
-        let totalPaidCents = amountCents;
-        let totalDueCents = 0;
+        // 2. Ensure ledger exists, then update
+        const ledger = await ensureLedgerExists(parentId);
+        const totalPaidCents = (ledger?.total_paid_cents || 0) + amountCents;
+        const totalDueCents = ledger?.total_due_cents || 0;
 
-        if (ledger) {
-          totalPaidCents = (ledger.total_paid_cents || 0) + amountCents;
-          totalDueCents = ledger.total_due_cents || 0;
-          await supabaseQuery("family_ledger", {
-            method: "PATCH",
-            body: {
-              total_paid_cents: totalPaidCents,
-              updated_at: new Date().toISOString(),
-            },
-            filters: `&parent_id=eq.${parentId}`,
-            headers: { Prefer: "return=minimal" },
-          });
-        }
+        await supabaseQuery("family_ledger", {
+          method: "PATCH",
+          body: {
+            total_paid_cents: totalPaidCents,
+            updated_at: new Date().toISOString(),
+          },
+          filters: `&parent_id=eq.${parentId}`,
+          headers: { Prefer: "return=minimal" },
+        });
 
         // 3. Confirm pending registrations
         const children = await supabaseQuery("children", {
@@ -261,7 +286,7 @@ exports.handler = async (event) => {
 
         console.log(`Payment completed for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
 
-        // ── Send payment receipt email ──────────────────────
+        // Send payment receipt email
         if (recipientEmails.length > 0) {
           const emailContent = paymentReceiptEmail({
             parentName: parentInfo.name,
@@ -283,8 +308,6 @@ exports.handler = async (event) => {
         }
       } catch (err) {
         console.error("Error processing payment:", err);
-        // Don't return 500 for email failures — payment processing succeeded
-        // Only return 500 if the actual payment/ledger processing failed
         return { statusCode: 500, body: `Processing error: ${err.message}` };
       }
     }

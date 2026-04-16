@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const FROM_EMAIL = process.env.FROM_EMAIL || "onboarding@resend.dev"; // Resend test sender until domain verified
+const FROM_EMAIL = process.env.FROM_EMAIL || "onboarding@resend.dev";
 const CAMP_NAME = "CGI Wilkes Rebbe";
 const SITE_URL = process.env.SITE_URL || "https://cgikingston.com";
 const LOGO_URL = process.env.CAMP_LOGO_URL || `${SITE_URL}/images/camp-logo.png`;
@@ -16,7 +16,6 @@ async function sendEmail({ to, subject, html, replyTo }) {
     return { success: false, error: "RESEND_API_KEY not configured" };
   }
 
-  // Support array of recipients
   const recipients = Array.isArray(to) ? to : [to];
 
   try {
@@ -51,7 +50,6 @@ async function sendEmail({ to, subject, html, replyTo }) {
 }
 
 // ── HTML Email Wrapper ───────────────────────────────────────
-// Camp-branded template with logo placeholder, green header, clean layout
 function wrapEmail(bodyContent) {
   return `
 <!DOCTYPE html>
@@ -66,13 +64,9 @@ function wrapEmail(bodyContent) {
     <tr>
       <td align="center" style="padding: 24px 16px;">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          
-          <!-- Header -->
           <tr>
             <td style="background: linear-gradient(135deg, #1a5c2e 0%, #2d7a45 100%); padding: 28px 32px; text-align:center;">
-              <!--[if !mso]><!-->
               <img src="${LOGO_URL}" alt="${CAMP_NAME}" width="80" height="80" style="display:block; margin: 0 auto 12px; border-radius:50%; border: 3px solid rgba(255,255,255,0.3);" onerror="this.style.display='none'">
-              <!--<![endif]-->
               <h1 style="margin:0; color:#ffffff; font-size:24px; font-weight:700; letter-spacing:0.5px; font-family: Georgia, 'Times New Roman', serif;">
                 ${CAMP_NAME}
               </h1>
@@ -81,15 +75,11 @@ function wrapEmail(bodyContent) {
               </p>
             </td>
           </tr>
-
-          <!-- Body -->
           <tr>
             <td style="padding: 32px;">
               ${bodyContent}
             </td>
           </tr>
-
-          <!-- Footer -->
           <tr>
             <td style="padding: 20px 32px; background-color:#f8faf8; border-top: 1px solid #e8ede8; text-align:center;">
               <p style="margin:0 0 4px; color:#6b7b6b; font-size:12px;">
@@ -100,7 +90,6 @@ function wrapEmail(bodyContent) {
               </p>
             </td>
           </tr>
-
         </table>
       </td>
     </tr>
@@ -119,7 +108,6 @@ const styles = {
   td: 'style="padding:8px 12px; border-bottom:1px solid #e8ede8; color:#374737; font-size:14px;"',
   badge: (color) => `style="display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; background-color:${color === 'green' ? '#e6f4ea' : color === 'yellow' ? '#fff8e1' : color === 'red' ? '#fde8e8' : '#e8eef4'}; color:${color === 'green' ? '#1a5c2e' : color === 'yellow' ? '#8a6d00' : color === 'red' ? '#991b1b' : '#1a3a6e'};"`,
   button: 'style="display:inline-block; padding:12px 28px; background-color:#2d7a45; color:#ffffff; text-decoration:none; border-radius:8px; font-size:15px; font-weight:600; margin:16px 0;"',
-  divider: '<tr><td style="padding:12px 0;"><hr style="border:none; border-top:1px solid #e8ede8; margin:0;"></td></tr>',
 };
 
 function formatCents(cents) {
@@ -136,9 +124,7 @@ function formatDate(dateStr) {
 // EMAIL TEMPLATES
 // ═══════════════════════════════════════════════════════════════
 
-// ── 1. Registration Confirmation ─────────────────────────────
 function registrationConfirmationEmail({ parentName, children, totalDue, registrationFeePaid }) {
-  // children = [{ name, division, weeks: ["Week 1", "Week 2"] }]
   let childRows = "";
   for (const child of children) {
     const weeksList = child.weeks.join(", ");
@@ -158,7 +144,6 @@ function registrationConfirmationEmail({ parentName, children, totalDue, registr
     <h2 ${styles.heading}>Registration Received!</h2>
     <p ${styles.text}>Hi ${parentName},</p>
     <p ${styles.text}>Thank you for registering for ${CAMP_NAME}! Here's a summary of your registration:</p>
-    
     <table ${styles.table}>
       <thead>
         <tr>
@@ -167,11 +152,8 @@ function registrationConfirmationEmail({ parentName, children, totalDue, registr
           <th ${styles.th}>Weeks</th>
         </tr>
       </thead>
-      <tbody>
-        ${childRows}
-      </tbody>
+      <tbody>${childRows}</tbody>
     </table>
-
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
         <td style="padding:12px 16px; background-color:#f0f5f0; border-radius:8px;">
@@ -184,12 +166,10 @@ function registrationConfirmationEmail({ parentName, children, totalDue, registr
         </td>
       </tr>
     </table>
-
     <p ${styles.text}>Your registration is pending until payment is received. You can pay online anytime:</p>
     <p style="text-align:center;">
       <a href="${SITE_URL}" ${styles.button}>Pay Now &rarr;</a>
     </p>
-
     <p ${styles.muted}>If you have any questions, reply to this email and we'll get back to you.</p>
   `;
 
@@ -199,7 +179,6 @@ function registrationConfirmationEmail({ parentName, children, totalDue, registr
   };
 }
 
-// ── 2. Payment Receipt ───────────────────────────────────────
 function paymentReceiptEmail({ parentName, amountCents, totalDueCents, totalPaidCents, paymentMethod, children }) {
   const balanceRemaining = totalDueCents - totalPaidCents;
   const balanceColor = balanceRemaining <= 0 ? "green" : "yellow";
@@ -207,16 +186,13 @@ function paymentReceiptEmail({ parentName, amountCents, totalDueCents, totalPaid
 
   let childSummary = "";
   if (children && children.length > 0) {
-    childSummary = `
-      <p ${styles.muted}>Registered campers: ${children.map(c => c.name).join(", ")}</p>
-    `;
+    childSummary = `<p ${styles.muted}>Registered campers: ${children.map(c => c.name).join(", ")}</p>`;
   }
 
   const body = `
     <h2 ${styles.heading}>Payment Received — Thank You!</h2>
     <p ${styles.text}>Hi ${parentName},</p>
     <p ${styles.text}>We've received your payment. Here are the details:</p>
-
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
         <td style="padding:16px; background-color:#e6f4ea; border-radius:8px; border: 1px solid #c8e6c9;">
@@ -233,9 +209,7 @@ function paymentReceiptEmail({ parentName, amountCents, totalDueCents, totalPaid
               <td style="color:#374737; font-size:13px; padding:4px 0;">Date:</td>
               <td style="color:#374737; font-size:13px; text-align:right;">${formatDate(new Date().toISOString())}</td>
             </tr>
-            <tr>
-              <td colspan="2" style="padding:8px 0 0;"><hr style="border:none; border-top:1px solid #c8e6c9;"></td>
-            </tr>
+            <tr><td colspan="2" style="padding:8px 0 0;"><hr style="border:none; border-top:1px solid #c8e6c9;"></td></tr>
             <tr>
               <td style="color:#374737; font-size:13px; padding:4px 0;">Total Due:</td>
               <td style="color:#374737; font-size:13px; text-align:right;">${formatCents(totalDueCents)}</td>
@@ -252,9 +226,7 @@ function paymentReceiptEmail({ parentName, amountCents, totalDueCents, totalPaid
         </td>
       </tr>
     </table>
-
     ${childSummary}
-
     <p ${styles.text}>You can view your account anytime at <a href="${SITE_URL}" style="color:#2d7a45;">${SITE_URL}</a></p>
     <p ${styles.muted}>This is your receipt. No further action is needed${balanceRemaining > 0 ? " for this payment" : ""}.</p>
   `;
@@ -265,13 +237,11 @@ function paymentReceiptEmail({ parentName, amountCents, totalDueCents, totalPaid
   };
 }
 
-// ── 3. Registration Fee Receipt ──────────────────────────────
 function registrationFeeReceiptEmail({ parentName }) {
   const body = `
     <h2 ${styles.heading}>Registration Fee Received</h2>
     <p ${styles.text}>Hi ${parentName},</p>
     <p ${styles.text}>We've received your $45 registration fee. Your family is now registered for ${CAMP_NAME}!</p>
-
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
         <td style="padding:12px 16px; background-color:#e6f4ea; border-radius:8px; border: 1px solid #c8e6c9;">
@@ -281,12 +251,10 @@ function registrationFeeReceiptEmail({ parentName }) {
         </td>
       </tr>
     </table>
-
     <p ${styles.text}>Next step: select your weeks and complete your camp payment.</p>
     <p style="text-align:center;">
       <a href="${SITE_URL}" ${styles.button}>Go to Registration &rarr;</a>
     </p>
-
     <p ${styles.muted}>If you have any questions, reply to this email.</p>
   `;
 
@@ -296,7 +264,6 @@ function registrationFeeReceiptEmail({ parentName }) {
   };
 }
 
-// ── 4. Status Change (Admin confirms or cancels) ─────────────
 function statusChangeEmail({ parentName, childName, weekName, divisionName, newStatus }) {
   const isConfirmed = newStatus === "confirmed";
   const statusBadge = isConfirmed
@@ -311,7 +278,6 @@ function statusChangeEmail({ parentName, childName, weekName, divisionName, newS
     <h2 ${styles.heading}>Registration Update</h2>
     <p ${styles.text}>Hi ${parentName},</p>
     <p ${styles.text}>${message}</p>
-
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
         <td style="padding:12px 16px; background-color:#f0f5f0; border-radius:8px;">
@@ -336,11 +302,9 @@ function statusChangeEmail({ parentName, childName, weekName, divisionName, newS
         </td>
       </tr>
     </table>
-
     <p style="text-align:center;">
       <a href="${SITE_URL}" ${styles.button}>View My Account &rarr;</a>
     </p>
-
     <p ${styles.muted}>If you have any questions, reply to this email.</p>
   `;
 
@@ -350,9 +314,7 @@ function statusChangeEmail({ parentName, childName, weekName, divisionName, newS
   };
 }
 
-// ── 5. Shirt Order Confirmation ──────────────────────────────
 function shirtOrderReceiptEmail({ parentName, amountCents, items }) {
-  // items = [{ size, quantity, priceEach }]
   let itemRows = "";
   if (items && items.length > 0) {
     for (const item of items) {
@@ -369,7 +331,6 @@ function shirtOrderReceiptEmail({ parentName, amountCents, items }) {
     <h2 ${styles.heading}>T-Shirt Order Confirmed!</h2>
     <p ${styles.text}>Hi ${parentName},</p>
     <p ${styles.text}>Your camp t-shirt order has been received and paid.</p>
-
     ${itemRows ? `
     <table ${styles.table}>
       <thead>
@@ -379,11 +340,8 @@ function shirtOrderReceiptEmail({ parentName, amountCents, items }) {
           <th ${styles.th}>Price</th>
         </tr>
       </thead>
-      <tbody>
-        ${itemRows}
-      </tbody>
+      <tbody>${itemRows}</tbody>
     </table>` : ""}
-
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
         <td style="padding:12px 16px; background-color:#e6f4ea; border-radius:8px;">
@@ -393,7 +351,6 @@ function shirtOrderReceiptEmail({ parentName, amountCents, items }) {
         </td>
       </tr>
     </table>
-
     <p ${styles.muted}>Shirts will be distributed at camp. If you have questions, reply to this email.</p>
   `;
 
@@ -402,10 +359,6 @@ function shirtOrderReceiptEmail({ parentName, amountCents, items }) {
     html: wrapEmail(body),
   };
 }
-
-// ═══════════════════════════════════════════════════════════════
-// EXPORTS
-// ═══════════════════════════════════════════════════════════════
 
 module.exports = {
   sendEmail,

@@ -43,43 +43,31 @@ const {
   }
   
   // ── Get all email recipients for a parent ────────────────────
-  // Returns the parent's auth email + any additional recipients from children
   async function getEmailRecipients(parentId) {
     const recipients = new Set();
   
-    // Get parent's auth email from Supabase auth.users via profiles or auth_email
-    // We'll look up the parent profile which has the email
     try {
-      const profiles = await supabaseQuery("parent_profiles", {
+      const parents = await supabaseQuery("parents", {
         filters: `&id=eq.${parentId}`,
-        select: "email,full_name",
+        select: "email,additional_emails",
       });
-      if (profiles && profiles[0]?.email) {
-        recipients.add(profiles[0].email);
-      }
-    } catch (e) {
-      console.warn("Could not fetch parent profile email:", e.message);
-    }
+      if (parents && parents[0]) {
+        if (parents[0].email) recipients.add(parents[0].email);
   
-    // Check for additional email recipients on children
-    try {
-      const children = await supabaseQuery("children", {
-        filters: `&parent_id=eq.${parentId}`,
-        select: "additional_email",
-      });
-      if (children) {
-        for (const child of children) {
-          if (child.additional_email) {
-            recipients.add(child.additional_email);
+        // additional_emails is jsonb — could be array of strings or objects
+        const extras = parents[0].additional_emails;
+        if (Array.isArray(extras)) {
+          for (const entry of extras) {
+            const addr = typeof entry === "string" ? entry : entry?.email;
+            if (addr) recipients.add(addr);
           }
         }
       }
     } catch (e) {
-      // additional_email column may not exist — that's fine
-      console.warn("Could not fetch additional emails:", e.message);
+      console.warn("Could not fetch parent emails:", e.message);
     }
   
-    return [...recipients];
+    return [...recipients].filter(Boolean);
   }
   
   exports.handler = async (event) => {
@@ -116,7 +104,6 @@ const {
             registrationFeePaid: registrationFeePaid || false,
           });
   
-          // Send to provided email + any additional recipients
           recipientEmails = [parentEmail];
           if (parentId) {
             const extras = await getEmailRecipients(parentId);
@@ -168,7 +155,6 @@ const {
           };
       }
   
-      // Filter out empty/null emails
       recipientEmails = recipientEmails.filter(Boolean);
   
       if (recipientEmails.length === 0) {
