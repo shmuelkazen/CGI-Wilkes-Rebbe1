@@ -1,79 +1,90 @@
 import { useState, useEffect, useCallback } from "react";
-import sb, { getActiveSeason, getSeasons } from "../lib/supabase";
+import sb from "../lib/supabase";
 import { colors, font, s } from "../lib/styles";
 import Icons from "../lib/icons";
 import { Spinner, EmptyState, StatusBadge, Modal, Field } from "../components/UI";
 
 // ============================================================
-// SESSION FORM MODAL
+// DIVISION FORM MODAL
 // ============================================================
-function SessionModal({ session, onClose, onSave, saving }) {
-  const isEdit = !!session;
+function DivisionModal({ division, onClose, onSave, saving }) {
+  const isEdit = !!division;
   const [form, setForm] = useState({
-    name: session?.name || "",
-    dates: session?.dates || "",
-    start_date: session?.start_date || "",
-    end_date: session?.end_date || "",
-    capacity: session?.capacity ?? 30,
-    price_cents: session?.price_cents ?? 40000,
-    age_min: session?.age_min ?? 6,
-    age_max: session?.age_max ?? 15,
-    description: session?.description || "",
-    active: session?.active ?? true,
+    name: division?.name || "",
+    description: division?.description || "",
+    gender_filter: division?.gender_filter || "any",
+    min_dob: division?.min_dob || "",
+    max_dob: division?.max_dob || "",
+    min_grade: division?.min_grade ?? "",
+    max_grade: division?.max_grade ?? "",
+    schedule_type: division?.schedule_type || "full_day",
+    per_week_price: division?.per_week_price ?? 35000,
+    sort_order: division?.sort_order ?? 0,
+    active: division?.active ?? true,
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  const handleSubmit = () => {
-    if (!form.name.trim()) return alert("Session name is required.");
-    if (!form.dates.trim()) return alert("Display dates are required (e.g. 'Jun 16–20').");
-    if (form.capacity < 1) return alert("Capacity must be at least 1.");
-    if (form.price_cents < 0) return alert("Price can't be negative.");
-    onSave({
-      name: form.name.trim(),
-      dates: form.dates.trim(),
-      start_date: form.start_date || null,
-      end_date: form.end_date || null,
-      capacity: Number(form.capacity),
-      price_cents: Number(form.price_cents),
-      age_min: Number(form.age_min),
-      age_max: Number(form.age_max),
-      description: form.description.trim(),
-      active: form.active,
-    });
-  };
-
   return (
-    <Modal title={isEdit ? "Edit Session" : "Create Session"} onClose={onClose} width={540}>
-      <Field label="Session Name *">
-        <input style={s.input} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Adventure Week" />
+    <Modal title={isEdit ? "Edit Division" : "Create Division"} onClose={onClose} width={540}>
+      <Field label="Division Name *">
+        <input style={s.input} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Boys Division" />
       </Field>
-      <Field label="Display Dates *">
-        <input style={s.input} value={form.dates} onChange={(e) => set("dates", e.target.value)} placeholder="e.g. Jun 16–20" />
+      <Field label="Description">
+        <input style={s.input} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="e.g. Full day program for boys" />
       </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <Field label="Start Date"><input type="date" style={s.input} value={form.start_date} onChange={(e) => set("start_date", e.target.value)} /></Field>
-        <Field label="End Date"><input type="date" style={s.input} value={form.end_date} onChange={(e) => set("end_date", e.target.value)} /></Field>
-        <Field label="Capacity *"><input type="number" style={s.input} value={form.capacity} onChange={(e) => set("capacity", e.target.value)} min={1} /></Field>
-        <Field label="Price (cents) *">
+        <Field label="Gender Filter *">
+          <select style={s.input} value={form.gender_filter} onChange={(e) => set("gender_filter", e.target.value)}>
+            <option value="any">Any</option>
+            <option value="male">Boys Only</option>
+            <option value="female">Girls Only</option>
+          </select>
+        </Field>
+        <Field label="Schedule *">
+          <select style={s.input} value={form.schedule_type} onChange={(e) => set("schedule_type", e.target.value)}>
+            <option value="full_day">Full Day</option>
+            <option value="half_day">Half Day</option>
+          </select>
+        </Field>
+        <Field label="Min DOB (born on or after)">
+          <input type="date" style={s.input} value={form.min_dob} onChange={(e) => set("min_dob", e.target.value)} />
+        </Field>
+        <Field label="Max DOB (born on or before)">
+          <input type="date" style={s.input} value={form.max_dob} onChange={(e) => set("max_dob", e.target.value)} />
+        </Field>
+        <Field label="Price Per Week (cents) *">
           <div style={{ position: "relative" }}>
-            <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.price_cents} onChange={(e) => set("price_cents", e.target.value)} min={0} step={100} />
-            <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.price_cents / 100).toFixed(2)}</span>
+            <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.per_week_price} onChange={(e) => set("per_week_price", e.target.value)} min={0} step={100} />
+            <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.per_week_price / 100).toFixed(2)}</span>
           </div>
         </Field>
-        <Field label="Min Age"><input type="number" style={s.input} value={form.age_min} onChange={(e) => set("age_min", e.target.value)} min={1} max={20} /></Field>
-        <Field label="Max Age"><input type="number" style={s.input} value={form.age_max} onChange={(e) => set("age_max", e.target.value)} min={1} max={20} /></Field>
+        <Field label="Sort Order">
+          <input type="number" style={s.input} value={form.sort_order} onChange={(e) => set("sort_order", e.target.value)} min={0} />
+        </Field>
       </div>
-      <Field label="Description">
-        <textarea style={{ ...s.input, minHeight: 70 }} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Brief description for parents…" />
-      </Field>
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14, cursor: "pointer" }}>
         <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} />
         Active (visible to parents)
       </label>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
-        <button onClick={handleSubmit} disabled={saving} style={s.btn("primary")}>
-          {saving ? <Spinner size={16} /> : isEdit ? "Save Changes" : "Create Session"}
+        <button onClick={() => {
+          if (!form.name.trim()) return alert("Division name is required.");
+          onSave({
+            name: form.name.trim(),
+            description: form.description.trim(),
+            gender_filter: form.gender_filter,
+            min_dob: form.min_dob || null,
+            max_dob: form.max_dob || null,
+            min_grade: form.min_grade !== "" ? Number(form.min_grade) : null,
+            max_grade: form.max_grade !== "" ? Number(form.max_grade) : null,
+            schedule_type: form.schedule_type,
+            per_week_price: Number(form.per_week_price),
+            sort_order: Number(form.sort_order),
+            active: form.active,
+          });
+        }} disabled={saving} style={s.btn("primary")}>
+          {saving ? <Spinner size={16} /> : isEdit ? "Save Changes" : "Create Division"}
         </button>
       </div>
     </Modal>
@@ -81,20 +92,58 @@ function SessionModal({ session, onClose, onSave, saving }) {
 }
 
 // ============================================================
-// NEW SEASON MODAL
+// WEEK FORM MODAL
 // ============================================================
-function SeasonModal({ onClose, onSave, saving }) {
-  const nextYear = new Date().getFullYear() + 1;
-  const [form, setForm] = useState({ name: `Summer ${nextYear}`, year: nextYear });
+function WeekModal({ week, division, onClose, onSave, saving }) {
+  const isEdit = !!week;
+  const [form, setForm] = useState({
+    name: week?.name || "",
+    start_date: week?.start_date || "",
+    end_date: week?.end_date || "",
+    price_override_cents: week?.price_override_cents ?? "",
+    capacity: week?.capacity ?? 50,
+    sort_order: week?.sort_order ?? 1,
+    active: week?.active ?? true,
+  });
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
   return (
-    <Modal title="Create New Season" onClose={onClose} width={400}>
-      <Field label="Season Name *"><input style={s.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Summer 2027" /></Field>
-      <Field label="Year *"><input type="number" style={s.input} value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })} /></Field>
-      <p style={{ fontSize: 13, color: colors.textMid, marginBottom: 20 }}>Creating a new season won't affect existing data. You can switch between seasons anytime.</p>
+    <Modal title={isEdit ? `Edit ${week.name}` : `Add Week to ${division?.name}`} onClose={onClose} width={480}>
+      <Field label="Week Name *">
+        <input style={s.input} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Week 1" />
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="Start Date *"><input type="date" style={s.input} value={form.start_date} onChange={(e) => set("start_date", e.target.value)} /></Field>
+        <Field label="End Date *"><input type="date" style={s.input} value={form.end_date} onChange={(e) => set("end_date", e.target.value)} /></Field>
+        <Field label="Capacity *"><input type="number" style={s.input} value={form.capacity} onChange={(e) => set("capacity", e.target.value)} min={1} /></Field>
+        <Field label="Price Override (cents)">
+          <div style={{ position: "relative" }}>
+            <input type="number" style={{ ...s.input, paddingRight: 60 }} value={form.price_override_cents} onChange={(e) => set("price_override_cents", e.target.value)} placeholder="Use division price" min={0} step={100} />
+            {form.price_override_cents && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.price_override_cents / 100).toFixed(2)}</span>}
+          </div>
+        </Field>
+        <Field label="Sort Order"><input type="number" style={s.input} value={form.sort_order} onChange={(e) => set("sort_order", e.target.value)} min={0} /></Field>
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14, cursor: "pointer" }}>
+        <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} /> Active
+      </label>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
-        <button onClick={() => { if (!form.name.trim()) return alert("Name is required."); onSave(form); }} disabled={saving} style={s.btn("primary")}>
-          {saving ? <Spinner size={16} /> : "Create Season"}
+        <button onClick={() => {
+          if (!form.name.trim()) return alert("Week name is required.");
+          if (!form.start_date || !form.end_date) return alert("Dates are required.");
+          onSave({
+            name: form.name.trim(),
+            start_date: form.start_date,
+            end_date: form.end_date,
+            price_override_cents: form.price_override_cents !== "" ? Number(form.price_override_cents) : null,
+            capacity: Number(form.capacity),
+            sort_order: Number(form.sort_order),
+            active: form.active,
+            division_id: division?.id,
+          });
+        }} disabled={saving} style={s.btn("primary")}>
+          {saving ? <Spinner size={16} /> : isEdit ? "Save Changes" : "Add Week"}
         </button>
       </div>
     </Modal>
@@ -104,17 +153,18 @@ function SeasonModal({ onClose, onSave, saving }) {
 // ============================================================
 // DISCOUNT CODE MODAL
 // ============================================================
-function DiscountCodeModal({ code, seasons, onClose, onSave, saving }) {
+function DiscountCodeModal({ code, onClose, onSave, saving }) {
   const isEdit = !!code;
   const [form, setForm] = useState({
     code: code?.code || "",
     description: code?.description || "",
-    type: code?.type || "flat",
-    amount: code?.amount ?? 0,
-    season_id: code?.season_id || "",
+    discount_type: code?.discount_type || "percent",
+    discount_value: code?.discount_value ?? 10,
+    applies_to: code?.applies_to || "all",
     max_uses: code?.max_uses ?? "",
     active: code?.active ?? true,
-    expires_at: code?.expires_at ? code.expires_at.slice(0, 10) : "",
+    valid_from: code?.valid_from || "",
+    valid_until: code?.valid_until || "",
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -126,34 +176,28 @@ function DiscountCodeModal({ code, seasons, onClose, onSave, saving }) {
       <Field label="Description"><input style={s.input} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="e.g. Early bird 10% off" /></Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Discount Type *">
-          <select style={s.input} value={form.type} onChange={(e) => set("type", e.target.value)}>
-            <option value="flat">Flat Amount ($)</option>
+          <select style={s.input} value={form.discount_type} onChange={(e) => set("discount_type", e.target.value)}>
             <option value="percent">Percentage (%)</option>
+            <option value="fixed">Fixed Amount (cents)</option>
+            <option value="per_week">Per Week (cents)</option>
           </select>
         </Field>
-        <Field label={form.type === "percent" ? "Percent Off *" : "Amount Off (cents) *"}>
-          <div style={{ position: "relative" }}>
-            <input type="number" style={s.input} value={form.amount} onChange={(e) => set("amount", e.target.value)} min={0} />
-            {form.type === "flat" && form.amount > 0 && (
-              <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.amount / 100).toFixed(2)}</span>
-            )}
-            {form.type === "percent" && (
-              <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>%</span>
-            )}
-          </div>
+        <Field label={form.discount_type === "percent" ? "Percent Off *" : "Amount (cents) *"}>
+          <input type="number" style={s.input} value={form.discount_value} onChange={(e) => set("discount_value", e.target.value)} min={0} />
         </Field>
-        <Field label="Season">
-          <select style={s.input} value={form.season_id} onChange={(e) => set("season_id", e.target.value)}>
-            <option value="">All Seasons</option>
-            {seasons.map((sn) => <option key={sn.id} value={sn.id}>{sn.name}</option>)}
+        <Field label="Applies To">
+          <select style={s.input} value={form.applies_to} onChange={(e) => set("applies_to", e.target.value)}>
+            <option value="all">All Divisions</option>
+            <option value="preschool">Preschool Only</option>
+            <option value="boys">Boys Only</option>
+            <option value="girls">Girls Only</option>
           </select>
         </Field>
         <Field label="Max Uses">
           <input type="number" style={s.input} value={form.max_uses} onChange={(e) => set("max_uses", e.target.value)} placeholder="Unlimited" min={1} />
         </Field>
-        <Field label="Expires">
-          <input type="date" style={s.input} value={form.expires_at} onChange={(e) => set("expires_at", e.target.value)} />
-        </Field>
+        <Field label="Valid From"><input type="date" style={s.input} value={form.valid_from} onChange={(e) => set("valid_from", e.target.value)} /></Field>
+        <Field label="Valid Until"><input type="date" style={s.input} value={form.valid_until} onChange={(e) => set("valid_until", e.target.value)} /></Field>
       </div>
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14, cursor: "pointer" }}>
         <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} /> Active
@@ -162,16 +206,17 @@ function DiscountCodeModal({ code, seasons, onClose, onSave, saving }) {
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
         <button onClick={() => {
           if (!form.code.trim()) return alert("Code is required.");
-          if (Number(form.amount) <= 0) return alert("Amount must be greater than 0.");
+          if (Number(form.discount_value) <= 0) return alert("Discount value must be greater than 0.");
           onSave({
             code: form.code.trim().toUpperCase(),
             description: form.description.trim(),
-            type: form.type,
-            amount: Number(form.amount),
-            season_id: form.season_id || null,
+            discount_type: form.discount_type,
+            discount_value: Number(form.discount_value),
+            applies_to: form.applies_to,
             max_uses: form.max_uses ? Number(form.max_uses) : null,
             active: form.active,
-            expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
+            valid_from: form.valid_from || null,
+            valid_until: form.valid_until || null,
           });
         }} disabled={saving} style={s.btn("primary")}>
           {saving ? <Spinner size={16} /> : isEdit ? "Save Changes" : "Create Code"}
@@ -182,51 +227,160 @@ function DiscountCodeModal({ code, seasons, onClose, onSave, saving }) {
 }
 
 // ============================================================
-// OFFLINE PAYMENT MODAL
+// SETTINGS MODAL
 // ============================================================
-function OfflinePaymentModal({ registration, child, session, parent, onClose, onSave, saving }) {
+function SettingsModal({ settings, onClose, onSave, saving }) {
   const [form, setForm] = useState({
-    amount_cents: registration.payment_amount_cents || session?.price_cents || 0,
-    method: "cash",
-    notes: "",
+    camp_name: settings.camp_name || "CGI Wilkes Rebbe",
+    camp_season: settings.camp_season || "Summer 2026",
+    early_bird_deadline: settings.early_bird_deadline || "",
+    early_bird_discount_percent: settings.early_bird_discount_percent ?? 10,
+    sibling_discount_type: settings.sibling_discount_type || "per_child",
+    sibling_discount_value: settings.sibling_discount_value ?? 5,
+    sibling_discount_starts_at: settings.sibling_discount_starts_at ?? 2,
+    registration_open: settings.registration_open ?? true,
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   return (
-    <Modal title="Record Offline Payment" onClose={onClose} width={440}>
-      <div style={{ background: colors.bg, borderRadius: 8, padding: 14, marginBottom: 20, fontSize: 14 }}>
-        <div><strong>Camper:</strong> {child?.first_name} {child?.last_name}</div>
-        <div><strong>Session:</strong> {session?.name}</div>
-        <div><strong>Parent:</strong> {parent?.full_name}</div>
-        <div><strong>Amount Due:</strong> ${((registration.payment_amount_cents || 0) / 100).toFixed(2)}</div>
+    <Modal title="Camp Settings" onClose={onClose} width={500}>
+      <Field label="Camp Name"><input style={s.input} value={form.camp_name} onChange={(e) => set("camp_name", e.target.value)} /></Field>
+      <Field label="Season Name"><input style={s.input} value={form.camp_season} onChange={(e) => set("camp_season", e.target.value)} /></Field>
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Early Bird Discount</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <Field label="Deadline"><input type="date" style={s.input} value={form.early_bird_deadline} onChange={(e) => set("early_bird_deadline", e.target.value)} /></Field>
+          <Field label="Discount %"><input type="number" style={s.input} value={form.early_bird_discount_percent} onChange={(e) => set("early_bird_discount_percent", e.target.value)} min={0} max={100} /></Field>
+        </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <Field label="Amount Received (cents) *">
-          <div style={{ position: "relative" }}>
-            <input type="number" style={s.input} value={form.amount_cents} onChange={(e) => set("amount_cents", e.target.value)} min={0} />
-            <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(form.amount_cents / 100).toFixed(2)}</span>
-          </div>
-        </Field>
-        <Field label="Method *">
-          <select style={s.input} value={form.method} onChange={(e) => set("method", e.target.value)}>
-            <option value="cash">Cash</option>
-            <option value="check">Check</option>
-            <option value="zelle">Zelle</option>
-            <option value="venmo">Venmo</option>
-            <option value="other">Other</option>
-          </select>
-        </Field>
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Sibling Discount</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <Field label="Discount % Per Sibling"><input type="number" style={s.input} value={form.sibling_discount_value} onChange={(e) => set("sibling_discount_value", e.target.value)} min={0} max={100} /></Field>
+          <Field label="Starts at Child #"><input type="number" style={s.input} value={form.sibling_discount_starts_at} onChange={(e) => set("sibling_discount_starts_at", e.target.value)} min={2} /></Field>
+        </div>
       </div>
-      <Field label="Notes"><textarea style={{ ...s.input, minHeight: 60 }} value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="e.g. Check #1234, received at pickup" /></Field>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14, cursor: "pointer" }}>
+        <input type="checkbox" checked={form.registration_open} onChange={(e) => set("registration_open", e.target.checked)} /> Registration Open
+      </label>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
-        <button onClick={() => {
-          if (Number(form.amount_cents) <= 0) return alert("Amount must be greater than 0.");
-          onSave({ amount_cents: Number(form.amount_cents), method: form.method, notes: form.notes.trim() });
-        }} disabled={saving} style={s.btn("primary")}>
-          {saving ? <Spinner size={16} /> : "Record Payment"}
+        <button onClick={() => onSave(form)} disabled={saving} style={s.btn("primary")}>
+          {saving ? <Spinner size={16} /> : "Save Settings"}
         </button>
       </div>
+    </Modal>
+  );
+}
+
+// ============================================================
+// FAMILY LEDGER MODAL
+// ============================================================
+function LedgerModal({ ledger, parent, payments, onClose, onRecordPayment, onClearBalance, saving }) {
+  const [payForm, setPayForm] = useState({ amount_cents: "", method: "cash", notes: "" });
+  const [clearReason, setClearReason] = useState("");
+  const [showPay, setShowPay] = useState(false);
+  const [showClear, setShowClear] = useState(false);
+
+  const balance = (ledger?.total_due_cents || 0) - (ledger?.total_paid_cents || 0);
+
+  return (
+    <Modal title={`${parent?.full_name || "Family"} — Billing`} onClose={onClose} width={560}>
+      {/* Summary */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
+        <div style={{ ...s.card, padding: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: colors.textMid, fontWeight: 600 }}>Total Due</div>
+          <div style={{ fontFamily: font.display, fontSize: 22 }}>${((ledger?.total_due_cents || 0) / 100).toFixed(0)}</div>
+        </div>
+        <div style={{ ...s.card, padding: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: colors.textMid, fontWeight: 600 }}>Paid</div>
+          <div style={{ fontFamily: font.display, fontSize: 22, color: colors.success }}>${((ledger?.total_paid_cents || 0) / 100).toFixed(0)}</div>
+        </div>
+        <div style={{ ...s.card, padding: 14, textAlign: "center", border: balance > 0 ? `1px solid ${colors.amber}` : `1px solid ${colors.success}` }}>
+          <div style={{ fontSize: 11, color: colors.textMid, fontWeight: 600 }}>Balance</div>
+          <div style={{ fontFamily: font.display, fontSize: 22, color: balance > 0 ? colors.amber : colors.success }}>${(balance / 100).toFixed(0)}</div>
+        </div>
+      </div>
+
+      {ledger?.balance_cleared && (
+        <div style={{ background: colors.forestPale, border: `1px solid ${colors.success}`, borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
+          {Icons.check({ size: 14, color: colors.success })} <strong>Balance cleared</strong>{ledger.balance_cleared_reason ? `: ${ledger.balance_cleared_reason}` : ""}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button onClick={() => { setShowPay(!showPay); setShowClear(false); }} style={s.btn("primary")}>Record Payment</button>
+        {!ledger?.balance_cleared && balance > 0 && (
+          <button onClick={() => { setShowClear(!showClear); setShowPay(false); }} style={s.btn("secondary")}>Clear Balance</button>
+        )}
+      </div>
+
+      {/* Record Payment Form */}
+      {showPay && (
+        <div style={{ ...s.card, marginBottom: 16, border: `1px solid ${colors.forest}` }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Record Offline Payment</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+            <Field label="Amount (cents) *">
+              <div style={{ position: "relative" }}>
+                <input type="number" style={s.input} value={payForm.amount_cents} onChange={(e) => setPayForm({ ...payForm, amount_cents: e.target.value })} min={0} />
+                {payForm.amount_cents > 0 && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: colors.textMid }}>= ${(payForm.amount_cents / 100).toFixed(2)}</span>}
+              </div>
+            </Field>
+            <Field label="Method *">
+              <select style={s.input} value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+                <option value="cash">Cash</option>
+                <option value="check">Check</option>
+                <option value="zelle">Zelle</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="Notes"><input style={s.input} value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} placeholder="e.g. Check #1234" /></Field>
+          <button onClick={() => {
+            if (!payForm.amount_cents || Number(payForm.amount_cents) <= 0) return alert("Enter an amount.");
+            onRecordPayment({ amount_cents: Number(payForm.amount_cents), method: payForm.method, notes: payForm.notes.trim() });
+            setPayForm({ amount_cents: "", method: "cash", notes: "" });
+            setShowPay(false);
+          }} disabled={saving} style={s.btn("primary")}>
+            {saving ? <Spinner size={16} /> : "Save Payment"}
+          </button>
+        </div>
+      )}
+
+      {/* Clear Balance Form */}
+      {showClear && (
+        <div style={{ ...s.card, marginBottom: 16, border: `1px solid ${colors.amber}` }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Clear Balance</div>
+          <Field label="Reason *"><input style={s.input} value={clearReason} onChange={(e) => setClearReason(e.target.value)} placeholder="e.g. Scholarship, family arrangement" /></Field>
+          <button onClick={() => {
+            if (!clearReason.trim()) return alert("Please enter a reason.");
+            onClearBalance(clearReason.trim());
+            setShowClear(false);
+          }} disabled={saving} style={s.btn("amber")}>
+            {saving ? <Spinner size={16} /> : "Clear Balance"}
+          </button>
+        </div>
+      )}
+
+      {/* Payment History */}
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Payment History</div>
+      {(!payments || payments.length === 0) ? (
+        <div style={{ fontSize: 13, color: colors.textMid, padding: "12px 0" }}>No payments recorded.</div>
+      ) : (
+        <div style={{ display: "grid", gap: 6 }}>
+          {payments.map((p) => (
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: colors.bg, borderRadius: 8, fontSize: 13 }}>
+              <div>
+                <span style={{ fontWeight: 600 }}>${(p.amount_cents / 100).toFixed(2)}</span>
+                <span style={{ color: colors.textMid }}> · {p.method}</span>
+                {p.notes && <span style={{ color: colors.textLight }}> · {p.notes}</span>}
+              </div>
+              <span style={{ color: colors.textLight, fontSize: 12 }}>{new Date(p.created_at).toLocaleDateString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 }
@@ -237,63 +391,57 @@ function OfflinePaymentModal({ registration, child, session, parent, onClose, on
 export default function AdminDashboard({ user, setView, showToast }) {
   const [tab, setTab] = useState("registrations");
   const [registrations, setRegistrations] = useState([]);
-  const [sessions, setSessions] = useState([]);
+  const [divisions, setDivisions] = useState([]);
+  const [weeks, setWeeks] = useState([]);
   const [children, setChildren] = useState([]);
   const [parents, setParents] = useState([]);
+  const [ledgers, setLedgers] = useState([]);
+  const [settings, setSettings] = useState({});
+  const [discountCodes, setDiscountCodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filterSession, setFilterSession] = useState("all");
+  const [filterDivision, setFilterDivision] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  // Season state
-  const [seasons, setSeasons] = useState([]);
-  const [activeSeason, setActiveSeason] = useState(null);
-  const [selectedSeason, setSelectedSeason] = useState(null); // what admin is viewing
-  const [seasonModal, setSeasonModal] = useState(false);
-
-  // Session CRUD state
-  const [sessionModal, setSessionModal] = useState(null);
+  // Modal state
+  const [divisionModal, setDivisionModal] = useState(null);
+  const [weekModal, setWeekModal] = useState(null);
+  const [weekModalDivision, setWeekModalDivision] = useState(null);
+  const [discountModal, setDiscountModal] = useState(null);
+  const [settingsModal, setSettingsModal] = useState(false);
+  const [ledgerModal, setLedgerModal] = useState(null);
+  const [ledgerPayments, setLedgerPayments] = useState([]);
   const [saving, setSaving] = useState(false);
-
-  // Discount codes state
-  const [discountCodes, setDiscountCodes] = useState([]);
-  const [discountModal, setDiscountModal] = useState(null); // null | "create" | code object
-
-  // Offline payment modal
-  const [paymentModal, setPaymentModal] = useState(null); // null | registration object
 
   const load = useCallback(async () => {
     try {
-      const [allSeasons, active] = await Promise.all([getSeasons(), getActiveSeason()]);
-      setSeasons(allSeasons || []);
-      setActiveSeason(active);
-      const viewingSeason = selectedSeason || active;
-      if (!selectedSeason && active) setSelectedSeason(active);
-
-      const [reg, ses, ch, par, codes] = await Promise.all([
+      const [reg, divs, wks, ch, par, codes, ledg, settingsRows] = await Promise.all([
         sb.query("registrations", { select: "*", filters: "&order=created_at.desc" }),
-        sb.query("session_enrollment"),
+        sb.query("divisions", { filters: "&order=sort_order.asc" }),
+        sb.query("division_weeks", { filters: "&order=sort_order.asc" }),
         sb.query("children"),
         sb.query("parents"),
         sb.query("discount_codes", { filters: "&order=created_at.desc" }).catch(() => []),
+        sb.query("family_ledger").catch(() => []),
+        sb.query("camp_settings").catch(() => []),
       ]);
-
-      // Filter sessions by selected season
-      const seasonSessions = (ses || []).filter((s) => !viewingSeason || s.season_id === viewingSeason.id);
-      const sessionIds = new Set(seasonSessions.map((s) => s.id));
-
-      // Filter registrations to only those in current season's sessions
-      const seasonRegs = (reg || []).filter((r) => sessionIds.has(r.session_id));
-
-      setRegistrations(seasonRegs);
-      setSessions(seasonSessions);
+      setRegistrations(reg || []);
+      setDivisions(divs || []);
+      setWeeks(wks || []);
       setChildren(ch || []);
       setParents(par || []);
       setDiscountCodes(codes || []);
+      setLedgers(ledg || []);
+
+      const st = {};
+      (settingsRows || []).forEach((row) => {
+        try { st[row.key] = JSON.parse(row.value); } catch { st[row.key] = row.value; }
+      });
+      setSettings(st);
     } catch (e) {
       console.error("Admin load:", e);
     } finally { setLoading(false); }
-  }, [selectedSeason]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -301,7 +449,9 @@ export default function AdminDashboard({ user, setView, showToast }) {
 
   const childMap = Object.fromEntries((children || []).map((c) => [c.id, c]));
   const parentMap = Object.fromEntries((parents || []).map((p) => [p.id, p]));
-  const sessionMap = Object.fromEntries((sessions || []).map((ses) => [ses.id, ses]));
+  const divisionMap = Object.fromEntries((divisions || []).map((d) => [d.id, d]));
+  const weekMap = Object.fromEntries((weeks || []).map((w) => [w.id, w]));
+  const ledgerMap = Object.fromEntries((ledgers || []).map((l) => [l.parent_id, l]));
 
   const updateRegistration = async (regId, updates) => {
     try {
@@ -311,85 +461,142 @@ export default function AdminDashboard({ user, setView, showToast }) {
     } catch (e) { alert("Error: " + e.message); }
   };
 
-  // ─── Season handlers ───
-  const handleCreateSeason = async (data) => {
+  // ─── Division CRUD ───
+  const handleSaveDivision = async (data) => {
     setSaving(true);
     try {
-      await sb.query("seasons", { method: "POST", body: { name: data.name.trim(), year: Number(data.year), active: false }, headers: { Prefer: "return=minimal" } });
-      showToast("Season created!");
-      setSeasonModal(false);
+      if (divisionModal && divisionModal !== "create") {
+        await sb.query("divisions", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${divisionModal.id}`, headers: { Prefer: "return=minimal" } });
+        showToast("Division updated!");
+      } else {
+        await sb.query("divisions", { method: "POST", body: data, headers: { Prefer: "return=minimal" } });
+        showToast("Division created!");
+      }
+      setDivisionModal(null);
       load();
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
   };
 
-  const handleSetActiveSeason = async (seasonId) => {
+  const handleDeleteDivision = async (div) => {
+    const weekCount = weeks.filter((w) => w.division_id === div.id).length;
+    if (!window.confirm(`Delete "${div.name}"${weekCount ? ` and its ${weekCount} weeks` : ""}? This cannot be undone.`)) return;
     try {
-      // Deactivate all
-      await sb.query("seasons", { method: "PATCH", body: { active: false }, filters: "&active=eq.true", headers: { Prefer: "return=minimal" } });
-      // Activate selected
-      await sb.query("seasons", { method: "PATCH", body: { active: true }, filters: `&id=eq.${seasonId}`, headers: { Prefer: "return=minimal" } });
-      showToast("Active season updated!");
+      await sb.query("divisions", { method: "DELETE", filters: `&id=eq.${div.id}` });
+      showToast("Division deleted.");
       load();
     } catch (e) { alert("Error: " + e.message); }
   };
 
-  const handleSwitchSeason = (seasonId) => {
-    const s = seasons.find((x) => x.id === seasonId);
-    if (s) { setSelectedSeason(s); setLoading(true); }
-  };
-
-  // ─── Session CRUD handlers ───
-  const handleCreateSession = async (data) => {
+  // ─── Week CRUD ───
+  const handleSaveWeek = async (data) => {
     setSaving(true);
     try {
-      await sb.query("sessions", {
+      if (weekModal && weekModal !== "create") {
+        await sb.query("division_weeks", { method: "PATCH", body: data, filters: `&id=eq.${weekModal.id}`, headers: { Prefer: "return=minimal" } });
+        showToast("Week updated!");
+      } else {
+        await sb.query("division_weeks", { method: "POST", body: data, headers: { Prefer: "return=minimal" } });
+        showToast("Week added!");
+      }
+      setWeekModal(null);
+      setWeekModalDivision(null);
+      load();
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleDeleteWeek = async (wk) => {
+    if (!window.confirm(`Delete "${wk.name}"? This cannot be undone.`)) return;
+    try {
+      await sb.query("division_weeks", { method: "DELETE", filters: `&id=eq.${wk.id}` });
+      showToast("Week deleted.");
+      load();
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  // ─── Settings ───
+  const handleSaveSettings = async (data) => {
+    setSaving(true);
+    try {
+      for (const [key, value] of Object.entries(data)) {
+        const jsonVal = JSON.stringify(value);
+        // Upsert: try update first, then insert
+        const existing = await sb.query("camp_settings", { filters: `&key=eq.${key}` });
+        if (existing && existing.length > 0) {
+          await sb.query("camp_settings", { method: "PATCH", body: { value: jsonVal, updated_at: new Date().toISOString() }, filters: `&key=eq.${key}`, headers: { Prefer: "return=minimal" } });
+        } else {
+          await sb.query("camp_settings", { method: "POST", body: { key, value: jsonVal }, headers: { Prefer: "return=minimal" } });
+        }
+      }
+      showToast("Settings saved!");
+      setSettingsModal(false);
+      load();
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  // ─── Family Ledger ───
+  const openLedger = async (parentId) => {
+    const ledger = ledgerMap[parentId] || null;
+    try {
+      const payments = await sb.query("payment_log", { filters: `&parent_id=eq.${parentId}&order=created_at.desc` });
+      setLedgerPayments(payments || []);
+    } catch { setLedgerPayments([]); }
+    setLedgerModal({ parentId, ledger });
+  };
+
+  const handleRecordPayment = async (data) => {
+    setSaving(true);
+    try {
+      const parentId = ledgerModal.parentId;
+      // Log payment
+      await sb.query("payment_log", {
         method: "POST",
-        body: { ...data, season_id: selectedSeason?.id },
+        body: { parent_id: parentId, amount_cents: data.amount_cents, method: data.method, notes: data.notes, recorded_by: user.id },
         headers: { Prefer: "return=minimal" },
       });
-      showToast("Session created!");
-      setSessionModal(null);
+      // Update ledger
+      const ledger = ledgerMap[parentId];
+      if (ledger) {
+        await sb.query("family_ledger", {
+          method: "PATCH",
+          body: { total_paid_cents: (ledger.total_paid_cents || 0) + data.amount_cents, updated_at: new Date().toISOString() },
+          filters: `&parent_id=eq.${parentId}`,
+          headers: { Prefer: "return=minimal" },
+        });
+      }
+      showToast("Payment recorded!");
       load();
-    } catch (e) { alert("Error creating session: " + e.message); }
+      openLedger(parentId); // refresh modal
+    } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
   };
 
-  const handleUpdateSession = async (data) => {
+  const handleClearBalance = async (reason) => {
     setSaving(true);
     try {
-      await sb.query("sessions", {
+      const parentId = ledgerModal.parentId;
+      await sb.query("family_ledger", {
         method: "PATCH",
-        body: data,
-        filters: `&id=eq.${sessionModal.id}`,
+        body: { balance_cleared: true, balance_cleared_reason: reason, balance_cleared_by: user.id, balance_cleared_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+        filters: `&parent_id=eq.${parentId}`,
         headers: { Prefer: "return=minimal" },
       });
-      showToast("Session updated!");
-      setSessionModal(null);
+      showToast("Balance cleared!");
       load();
-    } catch (e) { alert("Error updating session: " + e.message); }
+      openLedger(parentId);
+    } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
   };
 
-  const handleDeleteSession = async (sesId, sesName) => {
-    const enrolled = sessions.find((ses) => ses.id === sesId)?.enrolled || 0;
-    const msg = enrolled > 0
-      ? `"${sesName}" has ${enrolled} enrolled camper(s). Deleting will remove their registrations too. Are you sure?`
-      : `Delete session "${sesName}"? This cannot be undone.`;
-    if (!window.confirm(msg)) return;
-    try {
-      await sb.query("sessions", { method: "DELETE", filters: `&id=eq.${sesId}` });
-      showToast("Session deleted.");
-      load();
-    } catch (e) { alert("Error deleting session: " + e.message); }
-  };
-
+  // ─── Filtering ───
   const filtered = registrations.filter((r) => {
-    if (filterSession !== "all" && r.session_id !== filterSession) return false;
-    if (filterStatus !== "all" && r.status !== filterStatus && r.payment_status !== filterStatus) return false;
+    if (filterDivision !== "all" && r.division_id !== filterDivision) return false;
+    if (filterStatus !== "all" && r.status !== filterStatus) return false;
     if (search) {
       const child = childMap[r.child_id];
-      const par = parentMap[r.parent_id];
+      const par = child ? parentMap[child.parent_id] : null;
       const term = search.toLowerCase();
       const haystack = `${child?.first_name || ""} ${child?.last_name || ""} ${par?.full_name || ""} ${par?.email || ""}`.toLowerCase();
       if (!haystack.includes(term)) return false;
@@ -398,15 +605,17 @@ export default function AdminDashboard({ user, setView, showToast }) {
   });
 
   const exportCSV = () => {
-    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Session", "Status", "Payment", "Allergies", "Medical Notes", "Registered"]];
+    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Division", "Week", "Status", "Price", "Allergies", "Medical", "Registered"]];
     filtered.forEach((r) => {
       const c = childMap[r.child_id];
-      const p = parentMap[r.parent_id];
-      const ses = sessionMap[r.session_id];
+      const p = c ? parentMap[c.parent_id] : {};
+      const div = divisionMap[r.division_id];
+      const wk = weekMap[r.week_id];
       const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : "";
       rows.push([
         `${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "",
-        ses?.name || "", r.status, r.payment_status, c?.allergies || "", c?.medical_notes || "",
+        div?.name || "", wk?.name || "", r.status, `$${(r.price_cents / 100).toFixed(0)}`,
+        c?.allergies || "", c?.medical_notes || c?.medical_info || "",
         new Date(r.created_at).toLocaleDateString(),
       ]);
     });
@@ -414,16 +623,18 @@ export default function AdminDashboard({ user, setView, showToast }) {
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `cgi-registrations-${selectedSeason?.name || "all"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.href = url; a.download = `cgi-registrations-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
     showToast("Exported!");
   };
 
   if (loading) return <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}><Spinner size={32} /></div>;
 
-  const totalRevenue = registrations.filter((r) => r.payment_status === "paid").reduce((sum, r) => sum + (r.payment_amount_cents || 0), 0);
+  const totalRegs = registrations.length;
   const totalPending = registrations.filter((r) => r.status === "pending").length;
   const totalConfirmed = registrations.filter((r) => r.status === "confirmed").length;
+  const totalRevenue = ledgers.reduce((sum, l) => sum + (l.total_paid_cents || 0), 0);
+  const campName = settings.camp_name || "CGI Wilkes Rebbe";
 
   return (
     <div style={{ minHeight: "100vh", background: colors.bg }}>
@@ -431,22 +642,10 @@ export default function AdminDashboard({ user, setView, showToast }) {
       <header style={{ background: colors.forest, padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {Icons.trees({ color: "#fff", size: 24 })}
-          <span style={{ fontFamily: font.display, color: "#fff", fontSize: 20 }}>CGI Wilkes Rebbe</span>
+          <span style={{ fontFamily: font.display, color: "#fff", fontSize: 20 }}>{campName}</span>
           <span style={s.badge("#fff")}>Admin</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Season Switcher */}
-          {seasons.length > 0 && (
-            <select
-              value={selectedSeason?.id || ""}
-              onChange={(e) => handleSwitchSeason(e.target.value)}
-              style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", borderRadius: 6, padding: "5px 10px", fontSize: 13, cursor: "pointer" }}
-            >
-              {seasons.map((sn) => (
-                <option key={sn.id} value={sn.id} style={{ color: "#333" }}>{sn.name}{sn.active ? " ✓" : ""}</option>
-              ))}
-            </select>
-          )}
           <button onClick={() => setView("parent")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.8)", padding: "6px 14px", fontSize: 13 }}>{Icons.home({ size: 14, color: "rgba(255,255,255,.8)" })} Parent View</button>
           <button onClick={handleSignOut} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.6)", padding: "6px 10px" }}>{Icons.logout({ size: 16, color: "rgba(255,255,255,.6)" })}</button>
         </div>
@@ -457,7 +656,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 28 }}>
           <div style={s.card}>
             <div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Total Registrations</div>
-            <div style={{ fontFamily: font.display, fontSize: 28 }}>{registrations.length}</div>
+            <div style={{ fontFamily: font.display, fontSize: 28 }}>{totalRegs}</div>
           </div>
           <div style={s.card}>
             <div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Confirmed</div>
@@ -468,20 +667,21 @@ export default function AdminDashboard({ user, setView, showToast }) {
             <div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>{totalPending}</div>
           </div>
           <div style={s.card}>
-            <div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Revenue (Paid)</div>
+            <div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Revenue (Collected)</div>
             <div style={{ fontFamily: font.display, fontSize: 28, color: colors.forest }}>${(totalRevenue / 100).toLocaleString()}</div>
           </div>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0 }}>
+        <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0, flexWrap: "wrap" }}>
           {[
             { key: "registrations", label: "Registrations", icon: Icons.clipboard },
-            { key: "sessions", label: "Sessions", icon: Icons.calendar },
+            { key: "divisions", label: "Divisions & Weeks", icon: Icons.calendar },
+            { key: "families", label: "Families", icon: Icons.users },
             { key: "discounts", label: "Discounts", icon: Icons.dollar },
-            { key: "seasons", label: "Seasons", icon: Icons.calendar },
+            { key: "settings", label: "Settings", icon: Icons.shield },
           ].map((t) => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
+            <button key={t.key} onClick={() => t.key === "settings" ? setSettingsModal(true) : setTab(t.key)} style={{
               ...s.btn("ghost"), borderBottom: `2px solid ${tab === t.key ? colors.forest : "transparent"}`,
               color: tab === t.key ? colors.forest : colors.textMid, borderRadius: 0, padding: "10px 16px", fontWeight: 600, fontSize: 14,
             }}>
@@ -498,9 +698,9 @@ export default function AdminDashboard({ user, setView, showToast }) {
                 <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>{Icons.search({ size: 16, color: colors.textLight })}</span>
                 <input style={{ ...s.input, paddingLeft: 36 }} placeholder="Search by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
-              <select style={{ ...s.input, width: "auto", minWidth: 160 }} value={filterSession} onChange={(e) => setFilterSession(e.target.value)}>
-                <option value="all">All Sessions</option>
-                {sessions.map((ses) => <option key={ses.id} value={ses.id}>{ses.name}</option>)}
+              <select style={{ ...s.input, width: "auto", minWidth: 160 }} value={filterDivision} onChange={(e) => setFilterDivision(e.target.value)}>
+                <option value="all">All Divisions</option>
+                {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
               <select style={{ ...s.input, width: "auto", minWidth: 130 }} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                 <option value="all">All Status</option>
@@ -508,8 +708,6 @@ export default function AdminDashboard({ user, setView, showToast }) {
                 <option value="confirmed">Confirmed</option>
                 <option value="waitlisted">Waitlisted</option>
                 <option value="cancelled">Cancelled</option>
-                <option value="paid">Paid</option>
-                <option value="unpaid">Unpaid</option>
               </select>
               <button onClick={exportCSV} style={s.btn("secondary")}>{Icons.download({ size: 14 })} Export CSV</button>
             </div>
@@ -521,7 +719,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
-                      {["Camper", "Parent", "Session", "Status", "Payment", "Date", "Actions"].map((h) => (
+                      {["Camper", "Parent", "Division", "Week", "Status", "Price", "Date", "Actions"].map((h) => (
                         <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
@@ -529,22 +727,21 @@ export default function AdminDashboard({ user, setView, showToast }) {
                   <tbody>
                     {filtered.map((r) => {
                       const c = childMap[r.child_id];
-                      const p = parentMap[r.parent_id];
-                      const ses = sessionMap[r.session_id];
-                      const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : "?";
+                      const p = c ? parentMap[c.parent_id] : {};
+                      const div = divisionMap[r.division_id];
+                      const wk = weekMap[r.week_id];
                       return (
                         <tr key={r.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
-                          <td style={{ padding: "10px 14px", fontWeight: 600 }}>{c?.first_name} {c?.last_name}<div style={{ fontSize: 12, color: colors.textMid, fontWeight: 400 }}>Age {age}</div></td>
+                          <td style={{ padding: "10px 14px", fontWeight: 600 }}>{c?.first_name} {c?.last_name}</td>
                           <td style={{ padding: "10px 14px" }}>{p?.full_name}<div style={{ fontSize: 12, color: colors.textMid }}>{p?.email}</div></td>
-                          <td style={{ padding: "10px 14px" }}>{ses?.name}<div style={{ fontSize: 12, color: colors.textMid }}>{ses?.dates}</div></td>
+                          <td style={{ padding: "10px 14px" }}>{div?.name}</td>
+                          <td style={{ padding: "10px 14px" }}>{wk?.name}<div style={{ fontSize: 12, color: colors.textMid }}>{wk?.start_date ? new Date(wk.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}</div></td>
                           <td style={{ padding: "10px 14px" }}><StatusBadge status={r.status} /></td>
-                          <td style={{ padding: "10px 14px" }}><StatusBadge status={r.payment_status} /><div style={{ fontSize: 12, color: colors.textMid, marginTop: 2 }}>${((r.payment_amount_cents || 0) / 100).toFixed(0)}</div></td>
+                          <td style={{ padding: "10px 14px", fontSize: 13 }}>${(r.price_cents / 100).toFixed(0)}</td>
                           <td style={{ padding: "10px 14px", fontSize: 13, color: colors.textMid }}>{new Date(r.created_at).toLocaleDateString()}</td>
                           <td style={{ padding: "10px 14px" }}>
                             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                               {r.status === "pending" && <button onClick={() => updateRegistration(r.id, { status: "confirmed" })} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Confirm</button>}
-                              {r.payment_status === "unpaid" && <button onClick={() => updateRegistration(r.id, { payment_status: "paid" })} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.dollar({ size: 13, color: colors.forest })} Mark Paid</button>}
-                              {r.payment_status === "unpaid" && <button onClick={() => setPaymentModal(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.sky }}>Record Payment</button>}
                               {r.status !== "cancelled" && <button onClick={() => { if (window.confirm("Cancel this registration?")) updateRegistration(r.id, { status: "cancelled" }); }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.x({ size: 13, color: colors.coral })}</button>}
                             </div>
                           </td>
@@ -558,47 +755,129 @@ export default function AdminDashboard({ user, setView, showToast }) {
           </div>
         )}
 
-        {/* ═══ SESSIONS TAB ═══ */}
-        {tab === "sessions" && (
+        {/* ═══ DIVISIONS & WEEKS TAB ═══ */}
+        {tab === "divisions" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 14, color: colors.textMid }}>{sessions.length} session{sessions.length !== 1 ? "s" : ""} in {selectedSeason?.name || "—"}</div>
-              <button onClick={() => setSessionModal("create")} style={s.btn("primary")}>{Icons.plus({ size: 16, color: "#fff" })} Add Session</button>
+              <div style={{ fontSize: 14, color: colors.textMid }}>{divisions.length} division{divisions.length !== 1 ? "s" : ""}</div>
+              <button onClick={() => setDivisionModal("create")} style={s.btn("primary")}>{Icons.plus({ size: 16, color: "#fff" })} Add Division</button>
             </div>
 
-            {sessions.length === 0 ? (
+            {divisions.length === 0 ? (
               <div style={s.card}>
-                <EmptyState icon={Icons.calendar} title="No sessions yet" sub={`Create your first session for ${selectedSeason?.name || "this season"}.`} />
+                <EmptyState icon={Icons.calendar} title="No divisions yet" sub="Create your first division (e.g. Preschool, Boys, Girls)." />
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {sessions.map((ses) => (
-                  <div key={ses.id} style={{ ...s.card, opacity: ses.active === false ? 0.55 : 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontFamily: font.display, fontSize: 18 }}>{ses.name}</span>
-                          {ses.active === false && <span style={s.badge(colors.textMid)}>Inactive</span>}
+              <div style={{ display: "grid", gap: 16 }}>
+                {divisions.map((div) => {
+                  const divWeeks = weeks.filter((w) => w.division_id === div.id).sort((a, b) => a.sort_order - b.sort_order);
+                  const totalEnrolled = registrations.filter((r) => r.division_id === div.id && r.status !== "cancelled").length;
+                  return (
+                    <div key={div.id} style={{ ...s.card, opacity: div.active === false ? 0.55 : 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontFamily: font.display, fontSize: 18 }}>{div.name}</span>
+                            {div.active === false && <span style={s.badge(colors.textMid)}>Inactive</span>}
+                            <span style={s.badge(colors.forest)}>{div.schedule_type === "half_day" ? "Half Day" : "Full Day"}</span>
+                          </div>
+                          <div style={{ fontSize: 14, color: colors.textMid }}>
+                            ${(div.per_week_price / 100).toFixed(0)}/week · {div.gender_filter === "any" ? "All" : div.gender_filter === "male" ? "Boys" : "Girls"} · {totalEnrolled} registrations
+                          </div>
+                          {div.description && <div style={{ fontSize: 13, color: colors.textLight, marginTop: 4 }}>{div.description}</div>}
                         </div>
-                        <div style={{ fontSize: 14, color: colors.textMid, marginBottom: 4 }}>
-                          {ses.dates} · Ages {ses.age_min}–{ses.age_max} · ${(ses.price_cents / 100).toFixed(0)}/camper
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => setDivisionModal(div)} style={{ ...s.btn("secondary"), padding: "7px 12px", fontSize: 13 }}>{Icons.edit({ size: 14 })} Edit</button>
+                          <button onClick={() => handleDeleteDivision(div)} style={{ ...s.btn("ghost"), padding: "7px 10px", color: colors.coral }}>{Icons.trash({ size: 14, color: colors.coral })}</button>
                         </div>
-                        {ses.description && <div style={{ fontSize: 13, color: colors.textLight, marginBottom: 8 }}>{ses.description}</div>}
-                        <div style={{ fontSize: 13, color: colors.textMid }}>{ses.enrolled || 0} registered</div>
                       </div>
-                      <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "flex-start" }}>
-                        <button onClick={() => setSessionModal(ses)} style={{ ...s.btn("secondary"), padding: "7px 12px", fontSize: 13 }}>
-                          {Icons.edit({ size: 14 })} Edit
-                        </button>
-                        <button onClick={() => handleDeleteSession(ses.id, ses.name)} style={{ ...s.btn("ghost"), padding: "7px 10px", color: colors.coral }}>
-                          {Icons.trash({ size: 14, color: colors.coral })}
-                        </button>
+
+                      {/* Weeks under this division */}
+                      <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: colors.textMid }}>{divWeeks.length} Week{divWeeks.length !== 1 ? "s" : ""}</span>
+                          <button onClick={() => { setWeekModalDivision(div); setWeekModal("create"); }} style={{ ...s.btn("ghost"), padding: "4px 10px", fontSize: 12, color: colors.forest }}>{Icons.plus({ size: 13, color: colors.forest })} Add Week</button>
+                        </div>
+                        {divWeeks.length === 0 ? (
+                          <div style={{ fontSize: 13, color: colors.textLight, padding: "8px 0" }}>No weeks added yet.</div>
+                        ) : (
+                          <div style={{ display: "grid", gap: 6 }}>
+                            {divWeeks.map((wk) => {
+                              const enrolled = registrations.filter((r) => r.week_id === wk.id && r.status !== "cancelled").length;
+                              const price = wk.price_override_cents ?? div.per_week_price;
+                              return (
+                                <div key={wk.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: colors.bg, borderRadius: 8, fontSize: 13 }}>
+                                  <div>
+                                    <span style={{ fontWeight: 600 }}>{wk.name}</span>
+                                    <span style={{ color: colors.textMid }}> · {new Date(wk.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – {new Date(wk.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                                    <span style={{ color: colors.textMid }}> · ${(price / 100).toFixed(0)}</span>
+                                    <span style={{ color: colors.textLight }}> · {enrolled}/{wk.capacity}</span>
+                                  </div>
+                                  <div style={{ display: "flex", gap: 4 }}>
+                                    <button onClick={() => { setWeekModalDivision(div); setWeekModal(wk); }} style={{ ...s.btn("ghost"), padding: "3px 6px", fontSize: 11 }}>{Icons.edit({ size: 12 })}</button>
+                                    <button onClick={() => handleDeleteWeek(wk)} style={{ ...s.btn("ghost"), padding: "3px 6px", color: colors.coral }}>{Icons.trash({ size: 12, color: colors.coral })}</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ═══ FAMILIES TAB ═══ */}
+        {tab === "families" && (
+          <div>
+            <div style={{ fontSize: 14, color: colors.textMid, marginBottom: 16 }}>{parents.length} families</div>
+            <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
+              {parents.length === 0 ? (
+                <EmptyState icon={Icons.users} title="No families yet" sub="Families appear here when parents register." />
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
+                      {["Parent", "Email", "Children", "Total Due", "Paid", "Balance", "Status", "Actions"].map((h) => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parents.map((p) => {
+                      const kids = children.filter((c) => c.parent_id === p.id);
+                      const ledger = ledgerMap[p.id];
+                      const due = ledger?.total_due_cents || 0;
+                      const paid = ledger?.total_paid_cents || 0;
+                      const balance = due - paid;
+                      const cleared = ledger?.balance_cleared;
+                      return (
+                        <tr key={p.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
+                          <td style={{ padding: "10px 14px", fontWeight: 600 }}>{p.full_name || "—"}</td>
+                          <td style={{ padding: "10px 14px", color: colors.textMid }}>{p.email}</td>
+                          <td style={{ padding: "10px 14px" }}>{kids.map((k) => k.first_name).join(", ") || "—"}</td>
+                          <td style={{ padding: "10px 14px" }}>${(due / 100).toFixed(0)}</td>
+                          <td style={{ padding: "10px 14px", color: colors.success }}>${(paid / 100).toFixed(0)}</td>
+                          <td style={{ padding: "10px 14px", fontWeight: 600, color: cleared ? colors.success : balance > 0 ? colors.amber : colors.success }}>
+                            {cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`}
+                          </td>
+                          <td style={{ padding: "10px 14px" }}>
+                            {cleared ? <StatusBadge status="confirmed" /> : balance === 0 && due > 0 ? <StatusBadge status="paid" /> : balance > 0 ? <StatusBadge status="unpaid" /> : "—"}
+                          </td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <button onClick={() => openLedger(p.id)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.dollar({ size: 13, color: colors.forest })} Billing</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
 
@@ -619,7 +898,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
-                      {["Code", "Description", "Discount", "Uses", "Expires", "Status", "Actions"].map((h) => (
+                      {["Code", "Description", "Discount", "Uses", "Valid Until", "Status", "Actions"].map((h) => (
                         <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid }}>{h}</th>
                       ))}
                     </tr>
@@ -630,27 +909,19 @@ export default function AdminDashboard({ user, setView, showToast }) {
                         <td style={{ padding: "10px 14px", fontWeight: 700, fontFamily: "monospace", fontSize: 14 }}>{dc.code}</td>
                         <td style={{ padding: "10px 14px", color: colors.textMid }}>{dc.description || "—"}</td>
                         <td style={{ padding: "10px 14px", fontWeight: 600 }}>
-                          {dc.type === "percent" ? `${dc.amount}%` : `$${(dc.amount / 100).toFixed(0)}`} off
+                          {dc.discount_type === "percent" ? `${dc.discount_value}%` : `$${(dc.discount_value / 100).toFixed(0)}`}
+                          {dc.discount_type === "per_week" ? "/week" : ""} off
                         </td>
-                        <td style={{ padding: "10px 14px" }}>
-                          {dc.times_used || 0}{dc.max_uses ? ` / ${dc.max_uses}` : ""}
-                        </td>
-                        <td style={{ padding: "10px 14px", fontSize: 13, color: colors.textMid }}>
-                          {dc.expires_at ? new Date(dc.expires_at).toLocaleDateString() : "Never"}
-                        </td>
-                        <td style={{ padding: "10px 14px" }}>
-                          <StatusBadge status={dc.active ? "confirmed" : "cancelled"} />
-                        </td>
+                        <td style={{ padding: "10px 14px" }}>{dc.times_used || 0}{dc.max_uses ? ` / ${dc.max_uses}` : ""}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 13, color: colors.textMid }}>{dc.valid_until ? new Date(dc.valid_until).toLocaleDateString() : "Never"}</td>
+                        <td style={{ padding: "10px 14px" }}><StatusBadge status={dc.active ? "confirmed" : "cancelled"} /></td>
                         <td style={{ padding: "10px 14px" }}>
                           <div style={{ display: "flex", gap: 4 }}>
                             <button onClick={() => setDiscountModal(dc)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12 }}>{Icons.edit({ size: 13 })} Edit</button>
                             <button onClick={async () => {
                               if (!window.confirm(`Delete code "${dc.code}"?`)) return;
-                              try {
-                                await sb.query("discount_codes", { method: "DELETE", filters: `&id=eq.${dc.id}` });
-                                showToast("Deleted!");
-                                load();
-                              } catch (e) { alert("Error: " + e.message); }
+                              try { await sb.query("discount_codes", { method: "DELETE", filters: `&id=eq.${dc.id}` }); showToast("Deleted!"); load(); }
+                              catch (e) { alert("Error: " + e.message); }
                             }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.trash({ size: 13, color: colors.coral })}</button>
                           </div>
                         </td>
@@ -662,66 +933,29 @@ export default function AdminDashboard({ user, setView, showToast }) {
             )}
           </div>
         )}
-
-        {/* ═══ SEASONS TAB ═══ */}
-        {tab === "seasons" && (
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 14, color: colors.textMid }}>{seasons.length} season{seasons.length !== 1 ? "s" : ""}</div>
-              <button onClick={() => setSeasonModal(true)} style={s.btn("primary")}>{Icons.plus({ size: 16, color: "#fff" })} New Season</button>
-            </div>
-
-            {seasons.length === 0 ? (
-              <div style={s.card}>
-                <EmptyState icon={Icons.calendar} title="No seasons" sub="Create your first season to get started." />
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {seasons.map((sn) => (
-                  <div key={sn.id} style={{ ...s.card, border: sn.active ? `2px solid ${colors.forest}` : `1px solid ${colors.border}` }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontFamily: font.display, fontSize: 18 }}>{sn.name}</span>
-                          {sn.active && <span style={s.badge(colors.success)}>Active</span>}
-                        </div>
-                        <div style={{ fontSize: 13, color: colors.textMid }}>Year: {sn.year}</div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        {!sn.active && (
-                          <button onClick={() => handleSetActiveSeason(sn.id)} style={s.btn("primary")}>
-                            Set as Active
-                          </button>
-                        )}
-                        <button onClick={() => { setSelectedSeason(sn); setTab("sessions"); setLoading(true); }} style={s.btn("secondary")}>
-                          View Sessions
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Modals */}
-      {sessionModal && (
-        <SessionModal
-          session={sessionModal === "create" ? null : sessionModal}
-          onClose={() => setSessionModal(null)}
-          onSave={sessionModal === "create" ? handleCreateSession : handleUpdateSession}
+      {divisionModal && (
+        <DivisionModal
+          division={divisionModal === "create" ? null : divisionModal}
+          onClose={() => setDivisionModal(null)}
+          onSave={handleSaveDivision}
           saving={saving}
         />
       )}
-      {seasonModal && (
-        <SeasonModal onClose={() => setSeasonModal(false)} onSave={handleCreateSeason} saving={saving} />
+      {weekModal && (
+        <WeekModal
+          week={weekModal === "create" ? null : weekModal}
+          division={weekModalDivision}
+          onClose={() => { setWeekModal(null); setWeekModalDivision(null); }}
+          onSave={handleSaveWeek}
+          saving={saving}
+        />
       )}
       {discountModal && (
         <DiscountCodeModal
           code={discountModal === "create" ? null : discountModal}
-          seasons={seasons}
           onClose={() => setDiscountModal(null)}
           onSave={async (data) => {
             setSaving(true);
@@ -741,44 +975,22 @@ export default function AdminDashboard({ user, setView, showToast }) {
           saving={saving}
         />
       )}
-      {paymentModal && (
-        <OfflinePaymentModal
-          registration={paymentModal}
-          child={childMap[paymentModal.child_id]}
-          session={sessionMap[paymentModal.session_id]}
-          parent={parentMap[paymentModal.parent_id]}
-          onClose={() => setPaymentModal(null)}
-          onSave={async (data) => {
-            setSaving(true);
-            try {
-              // Create payment record
-              await sb.query("payments", {
-                method: "POST",
-                body: {
-                  parent_id: paymentModal.parent_id,
-                  registration_id: paymentModal.id,
-                  amount_cents: data.amount_cents,
-                  provider: "offline",
-                  provider_payment_id: null,
-                  status: "completed",
-                  method: data.method,
-                  notes: data.notes,
-                },
-                headers: { Prefer: "return=minimal" },
-              });
-              // Update registration
-              await sb.query("registrations", {
-                method: "PATCH",
-                body: { payment_status: "paid", status: "confirmed" },
-                filters: `&id=eq.${paymentModal.id}`,
-                headers: { Prefer: "return=minimal" },
-              });
-              showToast("Payment recorded!");
-              setPaymentModal(null);
-              load();
-            } catch (e) { alert("Error: " + e.message); }
-            finally { setSaving(false); }
-          }}
+      {settingsModal && (
+        <SettingsModal
+          settings={settings}
+          onClose={() => setSettingsModal(false)}
+          onSave={handleSaveSettings}
+          saving={saving}
+        />
+      )}
+      {ledgerModal && (
+        <LedgerModal
+          ledger={ledgerModal.ledger}
+          parent={parentMap[ledgerModal.parentId]}
+          payments={ledgerPayments}
+          onClose={() => { setLedgerModal(null); setLedgerPayments([]); }}
+          onRecordPayment={handleRecordPayment}
+          onClearBalance={handleClearBalance}
           saving={saving}
         />
       )}

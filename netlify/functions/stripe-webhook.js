@@ -38,7 +38,6 @@ exports.handler = async (event) => {
       const sig = event.headers["stripe-signature"];
       stripeEvent = stripe.webhooks.constructEvent(event.body, sig, STRIPE_WEBHOOK_SECRET);
     } else {
-      // In test mode without webhook secret, parse directly
       stripeEvent = JSON.parse(event.body);
     }
   } catch (err) {
@@ -48,53 +47,61 @@ exports.handler = async (event) => {
 
   if (stripeEvent.type === "checkout.session.completed") {
     const session = stripeEvent.data.object;
-    const registrationIds = session.metadata?.registration_ids?.split(",").filter(Boolean);
-    const discountCodeId = session.metadata?.discount_code_id;
+    const parentId = session.metadata?.parent_id;
+    const amountCents = parseInt(session.metadata?.amount_cents || session.amount_total || 0);
 
-    if (registrationIds && registrationIds.length > 0) {
+    if (parentId && amountCents > 0) {
       try {
-        // Update each registration to paid
-        for (const regId of registrationIds) {
+        // 1. Log the payment
+        await supabaseQuery("payment_log", {
+          method: "POST",
+          body: {
+            parent_id: parentId,
+            amount_cents: amountCents,
+            method: "stripe",
+            stripe_payment_id: session.payment_intent,
+            notes: `Stripe checkout ${session.id}`,
+          },
+          headers: { Prefer: "return=minimal" },
+        });
+
+        // 2. Update family ledger — add to total_paid
+        const ledgers = await supabaseQuery("family_ledger", {
+          filters: `&parent_id=eq.${parentId}`,
+        });
+        const ledger = ledgers && ledgers[0];
+
+        if (ledger) {
+          const newPaid = (ledger.total_paid_cents || 0) + amountCents;
+          await supabaseQuery("family_ledger", {
+            method: "PATCH",
+            body: {
+              total_paid_cents: newPaid,
+              updated_at: new Date().toISOString(),
+            },
+            filters: `&parent_id=eq.${parentId}`,
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+
+        // 3. Confirm all pending registrations for this parent's children
+        const children = await supabaseQuery("children", {
+          filters: `&parent_id=eq.${parentId}`,
+        });
+        if (children && children.length > 0) {
+          const childIds = children.map((c) => c.id);
           await supabaseQuery("registrations", {
             method: "PATCH",
             body: {
-              payment_status: "paid",
               status: "confirmed",
+              updated_at: new Date().toISOString(),
             },
-            filters: `&id=eq.${regId}`,
+            filters: `&child_id=in.(${childIds.join(",")})&status=eq.pending`,
             headers: { Prefer: "return=minimal" },
           });
         }
 
-        // Get parent_id from first registration for payment record
-        const regs = await supabaseQuery("registrations", {
-          filters: `&id=in.(${registrationIds.join(",")})`,
-        });
-
-        if (regs && regs.length > 0) {
-          const parentId = regs[0].parent_id;
-
-          // Create payment record
-          await supabaseQuery("payments", {
-            method: "POST",
-            body: {
-              parent_id: parentId,
-              registration_id: regs[0].id,
-              amount_cents: session.amount_total,
-              provider: "stripe",
-              provider_payment_id: session.payment_intent,
-              status: "completed",
-              method: "card",
-              receipt_url: session.receipt_url || null,
-              notes: registrationIds.length > 1
-                ? `Payment for ${registrationIds.length} registrations`
-                : null,
-            },
-            headers: { Prefer: "return=minimal" },
-          });
-        }
-
-        console.log(`Payment completed for registrations: ${registrationIds.join(", ")}`);
+        console.log(`Payment completed for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
       } catch (err) {
         console.error("Error processing payment:", err);
         return { statusCode: 500, body: `Processing error: ${err.message}` };

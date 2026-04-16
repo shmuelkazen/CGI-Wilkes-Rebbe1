@@ -41,130 +41,81 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { registrationIds, parentEmail, discountCode, siteUrl } = JSON.parse(event.body);
+    const { parentId, parentEmail, amountCents, siteUrl } = JSON.parse(event.body);
 
-    if (!registrationIds || registrationIds.length === 0) {
-      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "No registrations provided" }) };
+    if (!parentId || !amountCents || amountCents <= 0) {
+      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Parent ID and amount are required" }) };
     }
 
-    // Fetch registrations with session details
-    const registrations = await supabaseQuery("registrations", {
-      filters: `&id=in.(${registrationIds.join(",")})&payment_status=eq.unpaid`,
-    });
+    // Fetch parent info
+    const parents = await supabaseQuery("parents", { filters: `&id=eq.${parentId}` });
+    const parent = parents && parents[0];
+    const email = parentEmail || parent?.email || "";
 
-    if (!registrations || registrations.length === 0) {
-      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "No unpaid registrations found" }) };
+    // Fetch children for this parent to build description
+    const children = await supabaseQuery("children", { filters: `&parent_id=eq.${parentId}` });
+    const childNames = (children || []).map((c) => `${c.first_name} ${c.last_name}`).join(", ");
+
+    // Fetch their pending registrations for line item detail
+    const childIds = (children || []).map((c) => c.id);
+    let registrations = [];
+    if (childIds.length > 0) {
+      registrations = await supabaseQuery("registrations", {
+        filters: `&child_id=in.(${childIds.join(",")})&status=in.(pending,confirmed)`,
+      }) || [];
     }
 
-    // Fetch session details for names
-    const sessionIds = [...new Set(registrations.map((r) => r.session_id))];
-    const sessions = await supabaseQuery("sessions", {
-      filters: `&id=in.(${sessionIds.join(",")})`,
-    });
-    const sessionMap = Object.fromEntries((sessions || []).map((s) => [s.id, s]));
+    // Fetch division and week info for descriptions
+    const divisionIds = [...new Set(registrations.map((r) => r.division_id).filter(Boolean))];
+    const weekIds = [...new Set(registrations.map((r) => r.week_id).filter(Boolean))];
 
-    // Fetch child details for names
-    const childIds = [...new Set(registrations.map((r) => r.child_id))];
-    const children = await supabaseQuery("children", {
-      filters: `&id=in.(${childIds.join(",")})`,
-    });
+    let divisions = [];
+    let weeks = [];
+    if (divisionIds.length > 0) {
+      divisions = await supabaseQuery("divisions", { filters: `&id=in.(${divisionIds.join(",")})` }) || [];
+    }
+    if (weekIds.length > 0) {
+      weeks = await supabaseQuery("division_weeks", { filters: `&id=in.(${weekIds.join(",")})` }) || [];
+    }
+    const divMap = Object.fromEntries(divisions.map((d) => [d.id, d]));
+    const weekMap = Object.fromEntries(weeks.map((w) => [w.id, w]));
     const childMap = Object.fromEntries((children || []).map((c) => [c.id, c]));
 
-    // Check for discount code
-    let discountAmount = 0;
-    let discountType = null;
-    let discountId = null;
-
-    if (discountCode) {
-      const codes = await supabaseQuery("discount_codes", {
-        filters: `&code=eq.${discountCode}&active=eq.true`,
-      });
-      const code = codes && codes[0];
-
-      if (code) {
-        const now = new Date();
-        const notExpired = !code.expires_at || new Date(code.expires_at) > now;
-        const notMaxed = !code.max_uses || (code.times_used || 0) < code.max_uses;
-
-        if (notExpired && notMaxed) {
-          discountType = code.type;
-          discountAmount = code.amount;
-          discountId = code.id;
-        }
-      }
-    }
-
-    // Build line items
-    let subtotal = 0;
-    const lineItems = registrations.map((r) => {
-      const ses = sessionMap[r.session_id];
+    // Build a single line item for the balance amount
+    // with a detailed description of what they're paying for
+    const description = registrations.map((r) => {
       const child = childMap[r.child_id];
-      const amount = r.payment_amount_cents || ses?.price_cents || 0;
-      subtotal += amount;
-      return {
-        price_data: {
-          currency: "usd",
-          product_data: {
-            name: `${ses?.name || "Camp Session"} — ${child?.first_name || ""} ${child?.last_name || ""}`,
-          },
-          unit_amount: amount,
-        },
-        quantity: 1,
-      };
-    });
-
-    // Apply discount
-    let discountCoupon = undefined;
-    if (discountId && discountAmount > 0) {
-      if (discountType === "percent") {
-        discountCoupon = await stripe.coupons.create({
-          percent_off: discountAmount,
-          duration: "once",
-        });
-      } else {
-        // flat amount in cents
-        discountCoupon = await stripe.coupons.create({
-          amount_off: discountAmount,
-          currency: "usd",
-          duration: "once",
-        });
-      }
-    }
+      const div = divMap[r.division_id];
+      const wk = weekMap[r.week_id];
+      return `${child?.first_name || "?"} — ${div?.name || "?"} ${wk?.name || ""}`;
+    }).join(", ");
 
     const baseUrl = siteUrl || process.env.SITE_URL || "https://comforting-custard-5d02c6.netlify.app";
 
-    // Create Stripe Checkout Session
-    const sessionParams = {
+    const checkoutSession = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
-      line_items: lineItems,
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `CGI Wilkes Rebbe — ${childNames || "Camp Registration"}`,
+              description: description || "Camp registration payment",
+            },
+            unit_amount: amountCents,
+          },
+          quantity: 1,
+        },
+      ],
       mode: "payment",
-      customer_email: parentEmail,
+      customer_email: email,
       success_url: `${baseUrl}?payment=success`,
       cancel_url: `${baseUrl}?payment=cancelled`,
       metadata: {
-        registration_ids: registrationIds.join(","),
-        discount_code_id: discountId || "",
+        parent_id: parentId,
+        amount_cents: String(amountCents),
       },
-    };
-
-    if (discountCoupon) {
-      sessionParams.discounts = [{ coupon: discountCoupon.id }];
-    }
-
-    const checkoutSession = await stripe.checkout.sessions.create(sessionParams);
-
-    // If discount code was used, increment usage
-    if (discountId) {
-      const currentCode = (await supabaseQuery("discount_codes", { filters: `&id=eq.${discountId}` }))?.[0];
-      if (currentCode) {
-        await supabaseQuery("discount_codes", {
-          method: "PATCH",
-          body: { times_used: (currentCode.times_used || 0) + 1 },
-          filters: `&id=eq.${discountId}`,
-          headers: { Prefer: "return=minimal" },
-        });
-      }
-    }
+    });
 
     return {
       statusCode: 200,
