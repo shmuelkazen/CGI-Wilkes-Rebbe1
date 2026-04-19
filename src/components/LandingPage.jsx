@@ -51,7 +51,8 @@ export default function LandingPage({ onSignIn, onEmailSignIn, onEmailSignUp, lo
   // Main landing view
   if (mode === "landing") {
     return (
-      <div style={{ minHeight: "100vh", background: `linear-gradient(170deg, ${colors.forest} 0%, ${colors.forestLight} 50%, ${colors.amber} 150%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
+      <div style={{ position: "relative", minHeight: "100vh", background: `linear-gradient(170deg, ${colors.forest} 0%, ${colors.forestLight} 50%, ${colors.amber} 150%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
+        <div style={{ position: "absolute", top: 12, right: 16, color: "rgba(255,255,255,.6)", fontSize: 13, fontFamily: "serif" }}>בס״ד</div>
         <div style={{ animation: "fadeIn .5s ease", maxWidth: 420, width: "100%" }}>
           <div style={{ fontSize: 48, marginBottom: 8 }}>{Icons.trees({ size: 64, color: "#fff" })}</div>
           <h1 style={{ fontFamily: font.display, fontSize: "clamp(32px, 6vw, 52px)", color: "#fff", lineHeight: 1.1, marginBottom: 12 }}>CGI Wilkes Rebbe</h1>
@@ -87,7 +88,8 @@ export default function LandingPage({ onSignIn, onEmailSignIn, onEmailSignUp, lo
 
   // Login / Signup form
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(170deg, ${colors.forest} 0%, ${colors.forestLight} 50%, ${colors.amber} 150%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <div style={{ position: "relative", minHeight: "100vh", background: `linear-gradient(170deg, ${colors.forest} 0%, ${colors.forestLight} 50%, ${colors.amber} 150%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ position: "absolute", top: 12, right: 16, color: "rgba(255,255,255,.6)", fontSize: 13, fontFamily: "serif" }}>בס״ד</div>
       <div style={{ animation: "fadeIn .35s ease", maxWidth: 400, width: "100%" }}>
         {/* Back button */}
         <button onClick={() => { setMode("landing"); setError(null); }} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.7)", padding: "6px 0", marginBottom: 20, fontSize: 14 }}>
