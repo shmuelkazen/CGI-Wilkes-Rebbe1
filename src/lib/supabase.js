@@ -106,14 +106,14 @@ const sb = {
     return session;
   },
 
-  async signUpWithEmail(email, password, fullName = "") {
+  async signUpWithEmail(email, password, firstName = "", lastName = "") {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
       body: JSON.stringify({
         email,
         password,
-        data: { full_name: fullName },
+        data: { first_name: firstName, last_name: lastName, full_name: `${firstName} ${lastName}`.trim() },
       }),
     });
     if (!res.ok) {
@@ -196,13 +196,19 @@ const sb = {
 export async function ensureParentProfile(user) {
   try {
     const existing = await sb.query("parents", { filters: `&id=eq.${user.id}`, single: true });
+    const meta = user.user_metadata || {};
+    const firstName = meta.first_name || "";
+    const lastName = meta.last_name || "";
+    const fullName = meta.full_name || `${firstName} ${lastName}`.trim() || user.email?.split("@")[0] || "";
     if (!existing) {
       await sb.query("parents", {
         method: "POST",
         body: {
           id: user.id,
           email: user.email,
-          full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "",
+          full_name: fullName,
+          first_name: firstName,
+          last_name: lastName,
         },
         headers: { Prefer: "return=minimal" },
       });

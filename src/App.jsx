@@ -57,8 +57,8 @@ export default function App() {
   };
 
   // Email/password sign up
-  const handleEmailSignUp = async (email, password, fullName) => {
-    const data = await sb.signUpWithEmail(email, password, fullName);
+  const handleEmailSignUp = async (email, password, firstName, lastName) => {
+    const data = await sb.signUpWithEmail(email, password, firstName, lastName);
     if (data.access_token && data.user) {
       await completeLogin(data.user);
     } else if (data.user && !data.access_token) {

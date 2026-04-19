@@ -8,7 +8,8 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -28,7 +29,7 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
     } else {
       if (!email) return setError("Please enter your email address.");
       if (!password) return setError("Please fill in all fields.");
-      if (mode === "signup" && !fullName) return setError("Please enter your full name.");
+      if (mode === "signup" && (!firstName.trim() || !lastName.trim())) return setError("First and last name are required.");
       if (password.length < 6) return setError("Password must be at least 6 characters.");
     }
 
@@ -37,7 +38,7 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
       if (mode === "login") {
         await onEmailSignIn(email, password);
       } else if (mode === "signup") {
-        await onEmailSignUp(email, password, fullName);
+        await onEmailSignUp(email, password, firstName.trim(), lastName.trim());
       } else if (mode === "forgot") {
         await onForgotPassword(email);
         setSuccess("Check your email for a password reset link.");
@@ -80,9 +81,9 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
       <div style={{ position: "relative", minHeight: "100vh", background: `linear-gradient(170deg, ${colors.forest} 0%, ${colors.forestLight} 50%, ${colors.amber} 150%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
         <div style={{ position: "absolute", top: 12, right: 16, color: "rgba(255,255,255,.6)", fontSize: 13, fontFamily: "serif" }}>בס״ד</div>
         <div style={{ animation: "fadeIn .5s ease", maxWidth: 420, width: "100%" }}>
-          <div style={{ fontSize: 48, marginBottom: 8 }}>{Icons.trees({ size: 64, color: "#fff" })}</div>
+          <img src="/logo.png" alt="CGI Wilkes Rebbe" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 8 }} />
           <h1 style={{ fontFamily: font.display, fontSize: "clamp(32px, 6vw, 52px)", color: "#fff", lineHeight: 1.1, marginBottom: 12 }}>CGI Wilkes Rebbe</h1>
-          <p style={{ color: "rgba(255,255,255,.8)", fontSize: 18, maxWidth: 440, margin: "0 auto 36px", lineHeight: 1.5 }}>Summer 2026 Registration<br />Adventure awaits — sign up today!</p>
+          <p style={{ color: "rgba(255,255,255,.8)", fontSize: 18, maxWidth: 440, margin: "0 auto 36px", lineHeight: 1.5 }}>Summer 5786 - 2026 Registration</p>
 
           <button onClick={() => switchMode("login")} style={{ ...s.btn("primary"), background: colors.white, color: colors.forest, fontSize: 16, padding: "14px 32px", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,.15)", gap: 12, width: "100%", justifyContent: "center", marginBottom: 12 }}>
             Sign In
@@ -131,7 +132,7 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
         )}
 
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          {Icons.trees({ size: 40, color: "#fff" })}
+          <img src="/logo.png" alt="CGI Wilkes Rebbe" style={{ width: 56, height: 56, objectFit: "contain" }} />
           <h2 style={{ fontFamily: font.display, color: "#fff", fontSize: 28, marginTop: 8 }}>
             {titles[mode]}
           </h2>
@@ -144,14 +145,26 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {/* Full name — signup only */}
           {mode === "signup" && (
-            <input
-              className="auth-input"
-              type="text"
-              placeholder="Full Name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              style={inputStyle}
-            />
+            <div style={{ display: "flex", gap: 10 }}>
+              <input
+                className="auth-input"
+                type="text"
+                placeholder="First Name *"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                style={inputStyle}
+                required
+              />
+              <input
+                className="auth-input"
+                type="text"
+                placeholder="Last Name *"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
           )}
 
           {/* Email — login, signup, forgot (not newpassword) */}
