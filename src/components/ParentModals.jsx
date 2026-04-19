@@ -1,8 +1,49 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import sb from "../lib/supabase";
 import { s, colors, font } from "../lib/styles";
 import Icons from "../lib/icons";
 import { Modal, Field, Spinner, StatusBadge } from "./UI";
+
+// ============================================================
+// SHARED HELPERS
+// ============================================================
+
+// Format date string without timezone shift
+function fmtDate(dateStr, opts) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", opts || { month: "short", day: "numeric" });
+}
+
+// Grade/class options by division type
+const PRESCHOOL_CLASSES = [
+  { value: "-5", label: "Infants" },
+  { value: "-4", label: "Toddler" },
+  { value: "-3", label: "Pre Nursery" },
+  { value: "-2", label: "Nursery" },
+  { value: "-1", label: "Pre K" },
+];
+
+const ELEMENTARY_GRADES = [
+  { value: "0", label: "Kindergarten" },
+  ...Array.from({ length: 8 }, (_, i) => ({ value: String(i + 1), label: `Grade ${i + 1}` })),
+];
+
+// Map grade number to class name (for preschool capacity)
+function gradeToClassName(grade) {
+  const cls = PRESCHOOL_CLASSES.find((c) => c.value === String(grade));
+  return cls ? cls.label : null;
+}
+
+// Determine which grade options to show based on division
+function getGradeOptions(division) {
+  if (!division) return [...PRESCHOOL_CLASSES, ...ELEMENTARY_GRADES];
+  const name = (division.name || "").toLowerCase();
+  if (name.includes("preschool") || name.includes("pre-school") || name.includes("half day")) {
+    return PRESCHOOL_CLASSES;
+  }
+  return ELEMENTARY_GRADES;
+}
 
 // ============================================================
 // AUTO-ASSIGN DIVISION
@@ -30,7 +71,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
   const [form, setForm] = useState({
     first_name: "", last_name: "", date_of_birth: "", gender: "", grade: "",
     tshirt_size: "", allergies: "", medications: "", dietary_restrictions: "",
-    medical_notes: "", swim_level: "", photo_release: false,
+    medical_notes: "", photo_release: false,
     emergency_contact_name: "", emergency_contact_phone: "", emergency_contact_relation: "",
   });
   const [done, setDone] = useState(false);
@@ -44,10 +85,17 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
     );
   }, [form.date_of_birth, form.gender, form.grade, divisions]);
 
-  const GRADES = [
-    { value: "-1", label: "Pre-K" }, { value: "0", label: "Kindergarten" },
-    ...Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: `Grade ${i + 1}` })),
-  ];
+  const gradeOptions = useMemo(() => getGradeOptions(matchedDivision), [matchedDivision]);
+
+  // Reset grade when division changes and current grade is invalid for new options
+  useEffect(() => {
+    if (form.grade && matchedDivision) {
+      const validValues = gradeOptions.map((g) => g.value);
+      if (!validValues.includes(form.grade)) {
+        set("grade", "");
+      }
+    }
+  }, [matchedDivision]);
 
   const validate = () => {
     if (!form.first_name || !form.last_name || !form.date_of_birth) {
@@ -56,6 +104,10 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
     }
     if (!form.gender) {
       alert("Please select gender.");
+      return false;
+    }
+    if (form.grade === "") {
+      alert("Please select a class/grade.");
       return false;
     }
     if (!form.tshirt_size) {
@@ -92,7 +144,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
         setForm((prev) => ({
           first_name: "", last_name: "", date_of_birth: "", gender: "", grade: "",
           tshirt_size: "", allergies: "", medications: "", dietary_restrictions: "",
-          medical_notes: "", swim_level: "", photo_release: false,
+          medical_notes: "", photo_release: false,
           emergency_contact_name: prev.emergency_contact_name,
           emergency_contact_phone: prev.emergency_contact_phone,
           emergency_contact_relation: prev.emergency_contact_relation,
@@ -135,10 +187,10 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
             <option value="">—</option><option value="Male">Boy</option><option value="Female">Girl</option>
           </select>
         </Field>
-        <Field label="Grade (Fall 2026)">
+        <Field label="Class/Grade finishing this year *">
           <select style={s.input} value={form.grade} onChange={(e) => set("grade", e.target.value)}>
             <option value="">—</option>
-            {GRADES.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+            {gradeOptions.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
           </select>
         </Field>
         <Field label="T-Shirt Size *">
@@ -149,11 +201,6 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
             <option value="AS">Adult S</option><option value="AM">Adult M</option><option value="AL">Adult L</option><option value="AXL">Adult XL</option>
           </select>
         </Field>
-        <Field label="Swim Level">
-          <select style={s.input} value={form.swim_level} onChange={(e) => set("swim_level", e.target.value)}>
-            <option value="">—</option><option value="none">None</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
-          </select>
-        </Field>
       </div>
 
       {/* Auto-division display */}
@@ -162,7 +209,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
           {Icons.check({ size: 18, color: colors.success })}
           <div>
             <div style={{ fontWeight: 700, color: colors.forest, fontSize: 14 }}>{matchedDivision.name}</div>
-            <div style={{ fontSize: 12, color: colors.textMid }}>{matchedDivision.schedule_type === "half_day" ? "Half Day" : "Full Day"} · ${(matchedDivision.per_week_price / 100).toFixed(0)}/week</div>
+            <div style={{ fontSize: 12, color: colors.textMid }}>${(matchedDivision.per_week_price / 100).toFixed(0)}/week</div>
           </div>
         </div>
       )}
@@ -226,8 +273,20 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
   const [appliedDiscount, setAppliedDiscount] = useState(null);
   const [discountError, setDiscountError] = useState("");
   const [checkingCode, setCheckingCode] = useState(false);
+  const [enrollment, setEnrollment] = useState([]); // week enrollment counts
 
   const isElrc = parent?.elrc_status === true;
+
+  // Load enrollment counts for capacity display
+  useEffect(() => {
+    async function loadEnrollment() {
+      try {
+        const data = await sb.query("rpc/get_week_enrollment");
+        setEnrollment(data || []);
+      } catch { setEnrollment([]); }
+    }
+    loadEnrollment();
+  }, []);
 
   const toggleWeek = (id) => {
     setSelected((prev) => {
@@ -238,70 +297,88 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
     });
   };
 
-  // Base price per week — ELRC or regular
+  // ─── Pricing helpers ───
+
+  const basePrice = division?.per_week_price ?? 0;
+
+  // Is this a partial week? (price differs from division base)
+  const isPartialWeek = (week) => {
+    const weekPrice = week.price_override_cents ?? basePrice;
+    return weekPrice !== basePrice;
+  };
+
+  // Proration ratio for partial weeks
+  const prorationRatio = (week) => {
+    if (basePrice === 0) return 1;
+    return (week.price_override_cents ?? basePrice) / basePrice;
+  };
+
+  // Base price per week — ELRC prorated for partial weeks
   const getBasePrice = (week) => {
-    if (isElrc && division?.elrc_weekly_price != null) return division.elrc_weekly_price;
-    return week.price_override_cents ?? division?.per_week_price ?? 0;
+    const weekPrice = week.price_override_cents ?? basePrice;
+    if (isElrc && division?.elrc_weekly_price != null) {
+      if (isPartialWeek(week)) {
+        return Math.round(division.elrc_weekly_price * prorationRatio(week));
+      }
+      return division.elrc_weekly_price;
+    }
+    return weekPrice;
   };
 
   // Minimum floor from settings
   const minFloor = settings?.minimum_weekly_price_cents ?? 0;
 
-  // Early bird: per-division fixed cents, only if NOT yet past deadline
-  // Early bird shows as "potential" — it applies at payment time if paid in full by deadline
+  // Early bird: per-division fixed cents, only on FULL weeks
   const earlyBirdDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null;
   const earlyBirdPerWeek = division?.early_bird_discount_cents || 0;
   const showEarlyBird = earlyBirdDeadline && earlyBirdPerWeek > 0;
 
-  // Full summer discount: auto if ALL division weeks are selected (already registered + newly selected)
-  const allDivisionWeekIds = new Set(divisionWeeks.map((w) => w.id));
-  const allRegisteredOrSelected = new Set([...alreadyRegisteredWeekIds, ...selected]);
-  const isFullSummer = allDivisionWeekIds.size > 0 && [...allDivisionWeekIds].every((id) => allRegisteredOrSelected.has(id));
-  const fullSummerPerWeek = division?.full_summer_discount_cents || 0;
-
-  // Sibling discount: fixed cents/week, elementary only check, starts at child #N
+  // Sibling discount
   const siblingStartsAt = settings?.sibling_discount_starts_at ?? 2;
   const siblingCentsPerWeek = settings?.sibling_discount_cents ?? 0;
   const siblingElementaryOnly = settings?.sibling_discount_elementary_only ?? false;
   const isSiblingEligible = siblingCount >= siblingStartsAt && siblingCentsPerWeek > 0
-    && (!siblingElementaryOnly || (division?.schedule_type === "full_day"));
+    && (!siblingElementaryOnly || !(division?.name || "").toLowerCase().includes("preschool"));
 
-  // Calculate per-week price with all discounts, respecting floor
-  const calcWeekPrice = (week) => {
-    let price = getBasePrice(week);
-    // Note: early bird is shown but not subtracted from ledger — it applies when paid in full by deadline
-    // So we show two totals: "if paid by deadline" and "regular"
-    return price;
+  // Get sibling discount for a specific week (prorated for partial)
+  const getSiblingDiscount = (week) => {
+    if (!isSiblingEligible) return 0;
+    if (isPartialWeek(week)) return Math.round(siblingCentsPerWeek * prorationRatio(week));
+    return siblingCentsPerWeek;
   };
 
+  // Get early bird discount for a specific week (0 for partial weeks)
+  const getEarlyBirdDiscount = (week) => {
+    if (!showEarlyBird) return 0;
+    if (isPartialWeek(week)) return 0;
+    return earlyBirdPerWeek;
+  };
+
+  // Calculate week price with early bird
   const calcWeekPriceWithEarlyBird = (week) => {
     let price = getBasePrice(week);
-    let discount = earlyBirdPerWeek;
-    if (isFullSummer && fullSummerPerWeek > 0) discount += fullSummerPerWeek;
-    if (isSiblingEligible) discount += siblingCentsPerWeek;
-    price = Math.max(minFloor, price - discount);
-    return price;
+    let discount = getEarlyBirdDiscount(week) + getSiblingDiscount(week);
+    const floor = isPartialWeek(week) ? Math.round(minFloor * prorationRatio(week)) : minFloor;
+    return Math.max(floor, price - discount);
   };
 
+  // Calculate week price without early bird (regular / ledger price)
   const calcWeekPriceRegular = (week) => {
     let price = getBasePrice(week);
-    let discount = 0;
-    if (isFullSummer && fullSummerPerWeek > 0) discount += fullSummerPerWeek;
-    if (isSiblingEligible) discount += siblingCentsPerWeek;
-    price = Math.max(minFloor, price - discount);
-    return price;
+    let discount = getSiblingDiscount(week);
+    const floor = isPartialWeek(week) ? Math.round(minFloor * prorationRatio(week)) : minFloor;
+    return Math.max(floor, price - discount);
   };
 
-  // Subtotals
+  // ─── Totals ───
   const selectedWeeks = [...selected].map((wid) => divisionWeeks.find((w) => w.id === wid)).filter(Boolean);
   const subtotal = selectedWeeks.reduce((sum, w) => sum + getBasePrice(w), 0);
   const totalEarlyBird = selectedWeeks.reduce((sum, w) => sum + calcWeekPriceWithEarlyBird(w), 0);
   const totalRegular = selectedWeeks.reduce((sum, w) => sum + calcWeekPriceRegular(w), 0);
 
   // Discount breakdowns for display
-  const earlyBirdTotal = showEarlyBird ? selectedWeeks.length * earlyBirdPerWeek : 0;
-  const fullSummerTotal = (isFullSummer && fullSummerPerWeek > 0) ? selectedWeeks.length * fullSummerPerWeek : 0;
-  const siblingTotal = isSiblingEligible ? selectedWeeks.length * siblingCentsPerWeek : 0;
+  const earlyBirdTotal = selectedWeeks.reduce((sum, w) => sum + getEarlyBirdDiscount(w), 0);
+  const siblingTotal = selectedWeeks.reduce((sum, w) => sum + getSiblingDiscount(w), 0);
 
   // Code discount (applied on top)
   let codeDiscount = 0;
@@ -316,9 +393,7 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
   const finalRegular = Math.max(0, totalRegular - codeDiscount);
 
   // What goes on the ledger is the regular price (not early bird)
-  // Early bird is the discount they get IF they pay in full by deadline
   const ledgerTotal = finalRegular;
-  const ledgerDiscount = subtotal - finalRegular;
 
   const applyCode = async () => {
     if (!discountCode.trim()) return;
@@ -348,6 +423,20 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
     setCheckingCode(false);
   };
 
+  // ─── Capacity check (preschool class-level) ───
+  const classCapacities = division?.class_capacities || null;
+  const childClassName = gradeToClassName(child.grade);
+
+  const getWeekClassEnrollment = (weekId) => {
+    if (!classCapacities || !childClassName) return null;
+    const cap = classCapacities[childClassName];
+    if (cap == null) return null;
+    const enrolled = enrollment.filter(
+      (e) => e.week_id === weekId && e.division_id === division.id && e.grade === child.grade
+    ).reduce((sum, e) => sum + (e.enrolled || 0), 0);
+    return { enrolled, capacity: cap, remaining: cap - enrolled };
+  };
+
   // No division assigned
   if (!division) {
     return (
@@ -368,14 +457,14 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
   return (
     <Modal title={`Register ${child.first_name} — ${division.name}`} onClose={onClose} width={560}>
       <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 6 }}>
-        {division.schedule_type === "half_day" ? "Half Day" : "Full Day"} Program · ${(displayPrice / 100).toFixed(0)}/week
+        ${(displayPrice / 100).toFixed(0)}/week
         {isElrc && <span style={{ color: colors.success, fontWeight: 600 }}> (ELRC Rate)</span>}
       </div>
 
       {/* Early bird notice */}
       {showEarlyBird && earlyBirdDeadline && (
         <div style={{ background: colors.forestPale, border: `1px solid ${colors.success}`, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
-          {Icons.dollar({ size: 14, color: colors.success })} <strong>Early Bird:</strong> Save ${(earlyBirdPerWeek / 100).toFixed(0)}/week when paid in full by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+          {Icons.dollar({ size: 14, color: colors.success })} <strong>Early Bird:</strong> Save ${(earlyBirdPerWeek / 100).toFixed(0)}/week on full weeks when paid in full by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
         </div>
       )}
 
@@ -390,7 +479,10 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 14, fontWeight: 700 }}>Select Weeks</span>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setSelected(new Set(availableWeeks.map((w) => w.id)))} style={{ ...s.btn("ghost"), fontSize: 12, padding: "4px 8px", color: colors.forest }}>All</button>
+              <button onClick={() => setSelected(new Set(availableWeeks.filter((w) => {
+                const cap = getWeekClassEnrollment(w.id);
+                return !cap || cap.remaining > 0;
+              }).map((w) => w.id)))} style={{ ...s.btn("ghost"), fontSize: 12, padding: "4px 8px", color: colors.forest }}>All</button>
               <button onClick={() => setSelected(new Set())} style={{ ...s.btn("ghost"), fontSize: 12, padding: "4px 8px", color: colors.textMid }}>None</button>
             </div>
           </div>
@@ -399,23 +491,35 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
             {availableWeeks.map((w) => {
               const checked = selected.has(w.id);
               const price = getBasePrice(w);
+              const partial = isPartialWeek(w);
+              const capInfo = getWeekClassEnrollment(w.id);
+              const isFull = capInfo && capInfo.remaining <= 0;
               return (
-                <div key={w.id} onClick={() => toggleWeek(w.id)} style={{
-                  ...s.card, padding: 14, cursor: "pointer",
-                  border: `2px solid ${checked ? colors.forest : colors.border}`,
-                  background: checked ? colors.forestPale : colors.card,
+                <div key={w.id} onClick={() => { if (!isFull) toggleWeek(w.id); }} style={{
+                  ...s.card, padding: 14, cursor: isFull ? "not-allowed" : "pointer",
+                  border: `2px solid ${isFull ? colors.textLight : checked ? colors.forest : colors.border}`,
+                  background: isFull ? colors.bg : checked ? colors.forestPale : colors.card,
+                  opacity: isFull ? 0.6 : 1,
                   transition: "all .15s",
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                      <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${checked ? colors.forest : colors.border}`, background: checked ? colors.forest : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, transition: "all .15s" }}>
-                        {checked && Icons.check({ size: 14, color: "#fff" })}
+                      <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${isFull ? colors.textLight : checked ? colors.forest : colors.border}`, background: checked && !isFull ? colors.forest : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, transition: "all .15s" }}>
+                        {checked && !isFull && Icons.check({ size: 14, color: "#fff" })}
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600, marginBottom: 2 }}>{w.name}</div>
-                        <div style={{ fontSize: 13, color: colors.textMid }}>
-                          {new Date(w.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – {new Date(w.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                          {w.name}
+                          {partial && <span style={{ fontSize: 11, color: colors.textLight, fontWeight: 400, marginLeft: 6 }}>(partial)</span>}
                         </div>
+                        <div style={{ fontSize: 13, color: colors.textMid }}>
+                          {fmtDate(w.start_date)} – {fmtDate(w.end_date)}
+                        </div>
+                        {capInfo && (
+                          <div style={{ fontSize: 11, color: isFull ? colors.coral : colors.textLight, marginTop: 2 }}>
+                            {isFull ? `${childClassName} class is full` : `${capInfo.remaining} of ${capInfo.capacity} ${childClassName} spots left`}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div style={{ fontFamily: font.display, fontSize: 18, color: colors.forest }}>${(price / 100).toFixed(0)}</div>
@@ -443,18 +547,12 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
           {selected.size > 0 && (
             <div style={{ ...s.card, background: colors.forestPale, marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 6 }}>
-                <span>{selected.size} week{selected.size !== 1 ? "s" : ""} × ${(getBasePrice(selectedWeeks[0]) / 100).toFixed(0)}</span>
+                <span>{selected.size} week{selected.size !== 1 ? "s" : ""}</span>
                 <span>${(subtotal / 100).toFixed(2)}</span>
               </div>
-              {fullSummerTotal > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success, marginBottom: 4 }}>
-                  <span>Full summer (${(fullSummerPerWeek / 100).toFixed(0)}/wk off)</span>
-                  <span>−${(fullSummerTotal / 100).toFixed(2)}</span>
-                </div>
-              )}
               {siblingTotal > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success, marginBottom: 4 }}>
-                  <span>Sibling discount (${(siblingCentsPerWeek / 100).toFixed(0)}/wk off)</span>
+                  <span>Sibling discount</span>
                   <span>−${(siblingTotal / 100).toFixed(2)}</span>
                 </div>
               )}
@@ -466,14 +564,14 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
               )}
 
               {/* Show early bird as potential savings */}
-              {showEarlyBird && (
+              {showEarlyBird && earlyBirdTotal > 0 && (
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 6, fontFamily: font.display, fontSize: 18 }}>
                     <span>If paid by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
                     <span style={{ color: colors.success }}>${(finalEarlyBird / 100).toFixed(2)}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.textMid, marginTop: 2 }}>
-                    <span>Early bird saves ${(earlyBirdTotal / 100).toFixed(0)}</span>
+                    <span>Early bird saves ${(earlyBirdTotal / 100).toFixed(0)} (full weeks only)</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontFamily: font.display, fontSize: 20 }}>
                     <span>Regular price</span>
@@ -481,7 +579,7 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
                   </div>
                 </>
               )}
-              {!showEarlyBird && (
+              {(!showEarlyBird || earlyBirdTotal === 0) && (
                 <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 6, fontFamily: font.display, fontSize: 20 }}>
                   <span>Total</span>
                   <span style={{ color: colors.forest }}>${(finalRegular / 100).toFixed(2)}</span>

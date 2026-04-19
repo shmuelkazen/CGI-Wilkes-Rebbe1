@@ -17,6 +17,13 @@ function calcAge(dob) {
   return age;
 }
 
+// Helper: format a date string (YYYY-MM-DD) without timezone shift
+function fmtDate(dateStr, opts) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", opts || { month: "short", day: "numeric" });
+}
+
 export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [children, setChildren] = useState([]);
   const [divisions, setDivisions] = useState([]);
@@ -557,7 +564,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                       <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>{child.first_name} {child.last_name}</div>
                       <div style={{ fontSize: 13, color: colors.textMid }}>
                         {age !== null ? `Age ${age}` : ""}
-                        {child.grade != null ? ` · ${child.grade === 0 ? "K" : child.grade === -1 ? "Pre-K" : `Grade ${child.grade}`}` : ""}
+                        {child.grade != null ? ` · ${child.grade === 0 ? "K" : child.grade === -1 ? "Pre-K" : child.grade < -1 ? ["","","","Pre Nursery","Toddler","Infants"][Math.abs(child.grade)] || "" : `Grade ${child.grade}`}` : ""}
                         {div ? ` · ${div.name}` : ""}
                         {child.tshirt_size ? ` · ${child.tshirt_size}` : ""}
                       </div>
@@ -718,18 +725,14 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
                       <span style={{ fontFamily: font.display, fontSize: 17, marginBottom: 4, display: "block" }}>{div.name}</span>
-                      <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 4 }}>
-                        {div.schedule_type === "half_day" ? "Half Day" : "Full Day"}
-                        {div.description ? ` · ${div.description}` : ""}
-                      </div>
                       <div style={{ fontSize: 12, color: colors.textLight }}>
                         {divWeeks.length} week{divWeeks.length !== 1 ? "s" : ""}: {divWeeks.map((w) =>
-                          `${w.name} (${new Date(w.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })})`
+                          `${w.name} (${fmtDate(w.start_date)})`
                         ).join(", ")}
                       </div>
                       {div.early_bird_discount_cents > 0 && settings?.early_bird_deadline && (
                         <div style={{ fontSize: 12, color: colors.success, marginTop: 4 }}>
-                          Early bird: ${((displayPrice - div.early_bird_discount_cents) / 100).toFixed(0)}/week if paid by {new Date(settings.early_bird_deadline).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          Early bird: ${((displayPrice - div.early_bird_discount_cents) / 100).toFixed(0)}/week if paid by {fmtDate(settings.early_bird_deadline, { month: "short", day: "numeric" })}
                         </div>
                       )}
                     </div>
