@@ -249,7 +249,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       const code = codes && codes[0];
       if (!code) { setDiscountError("Invalid or inactive code."); return; }
 
-      if (code.expires_at && new Date(code.expires_at) < new Date()) {
+      if (code.valid_until && new Date(code.valid_until) < new Date()) {
         setDiscountError("This code has expired.");
         return;
       }
@@ -265,10 +265,10 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       if (currentBalance <= 0) { setDiscountError("No balance to apply discount to."); return; }
 
       let discountCents = 0;
-      if (code.type === "percent") {
-        discountCents = Math.round((currentBalance * (Number(code.amount_cents) || 0)) / 100);
+      if (code.discount_type === "percent") {
+        discountCents = Math.round((currentBalance * (Number(code.discount_value) || 0)) / 100);
       } else {
-        discountCents = Math.min(Number(code.amount_cents) || 0, currentBalance);
+        discountCents = Math.min(Number(code.discount_value) || 0, currentBalance);
       }
 
       if (discountCents <= 0) { setDiscountError("Discount results in $0 — no change."); return; }
