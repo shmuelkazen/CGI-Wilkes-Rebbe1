@@ -95,7 +95,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       } catch { setShirtOrders([]); }
 
       // Check if address is missing
-      if (p && (!p.address || !p.address.trim())) {
+      if (p && (!p.address || !p.address.trim() || !p.phone || !p.phone.trim())) {
         setNeedsAddress(true);
         setAddressForm({ address: p.address || "", phone: p.phone || "" });
       }
@@ -498,15 +498,28 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               {Icons.alertCircle({ size: 20, color: colors.amber })}
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>Please complete your profile</div>
-                <p style={{ fontSize: 14, color: colors.textMid, marginBottom: 16 }}>We need your mailing address on file before you can register.</p>
+                <p style={{ fontSize: 14, color: colors.textMid, marginBottom: 16 }}>We need your mailing address and phone number on file before you can register.</p>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", maxWidth: 500 }}>
                   <Field label="Address *"><input style={s.input} value={addressForm.address} onChange={(e) => setAddressForm({ ...addressForm, address: e.target.value })} placeholder="123 Main St, City, State ZIP" /></Field>
-                  <Field label="Phone"><input style={s.input} value={addressForm.phone} onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })} placeholder="(555) 123-4567" /></Field>
+                  <Field label="Phone *"><input style={s.input} value={addressForm.phone} onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                    let fmt = digits;
+                    if (digits.length > 6) fmt = `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+                    else if (digits.length > 3) fmt = `(${digits.slice(0,3)}) ${digits.slice(3)}`;
+                    else if (digits.length > 0) fmt = `(${digits}`;
+                    setAddressForm({ ...addressForm, phone: fmt });
+                  }} placeholder="(555) 123-4567" inputMode="tel" /></Field>
                 </div>
                 <button onClick={async () => {
-                  if (!addressForm.address.trim()) return alert("Address is required.");
+                  const addr = addressForm.address.trim();
+                  const phoneDigits = addressForm.phone.replace(/\D/g, "");
+                  if (!addr) return alert("Address is required.");
+                  if (addr.length < 8) return alert("Please enter your full street address.");
+                  if (!/\d/.test(addr) || !/[a-zA-Z]/.test(addr)) return alert("Please enter a valid street address with number and street name.");
+                  if (!phoneDigits) return alert("Phone number is required.");
+                  if (phoneDigits.length < 10) return alert("Please enter a full 10-digit phone number.");
                   try {
-                    await sb.query("parents", { method: "PATCH", body: { address: addressForm.address.trim(), phone: addressForm.phone.trim() }, filters: `&id=eq.${user.id}`, headers: { Prefer: "return=minimal" } });
+                    await sb.query("parents", { method: "PATCH", body: { address: addr, phone: addressForm.phone.trim(), updated_at: new Date().toISOString() }, filters: `&id=eq.${user.id}`, headers: { Prefer: "return=minimal" } });
                     setNeedsAddress(false);
                     showToast("Profile updated!");
                     load();
