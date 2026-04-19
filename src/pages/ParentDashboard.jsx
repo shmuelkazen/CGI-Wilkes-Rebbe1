@@ -96,7 +96,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       let credits = [];
       try {
         credits = await sb.query("payment_log", {
-          filters: `&parent_id=eq.${user.id}&method=eq.discount&order=created_at.asc`,
+          filters: `&parent_id=eq.${user.id}&method=eq.discount&discount_code_id=not.is.null&order=created_at.asc`,
         }) || [];
       } catch { credits = []; }
       setDiscountCredits(credits);
