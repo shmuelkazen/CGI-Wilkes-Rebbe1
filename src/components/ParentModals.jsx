@@ -127,6 +127,14 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
       alert("Emergency contact name and phone are required.");
       return false;
     }
+    if (form.receives_services === "") {
+      alert("Please indicate whether your child receives any support or services.");
+      return false;
+    }
+    if (form.receives_services === "yes" && !form.services_description.trim()) {
+      alert("Please describe the support or services your child receives.");
+      return false;
+    }
     return true;
   };
 
@@ -146,6 +154,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
           first_name: "", last_name: "", date_of_birth: "", gender: "", grade: "",
           tshirt_size: "", allergies: "", medications: "", dietary_restrictions: "",
           medical_notes: "", photo_release: false,
+          receives_services: "", services_description: "", additional_notes: "",
           emergency_contact_name: prev.emergency_contact_name,
           emergency_contact_phone: prev.emergency_contact_phone,
           emergency_contact_relation: prev.emergency_contact_relation,
@@ -238,6 +247,26 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
         <Field label="Medical Conditions *"><textarea style={{ ...s.input, minHeight: 60 }} value={form.medical_notes} onChange={(e) => set("medical_notes", e.target.value)} placeholder="N/A BH" /></Field>
         <Field label="Medications"><textarea style={{ ...s.input, minHeight: 60 }} value={form.medications} onChange={(e) => set("medications", e.target.value)} placeholder="Current medications…" /></Field>
         <Field label="Dietary Restrictions"><input style={s.input} value={form.dietary_restrictions} onChange={(e) => set("dietary_restrictions", e.target.value)} placeholder="e.g. vegetarian, nut-free, kosher" /></Field>
+
+        {/* Services / Support */}
+        <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0 12px", paddingTop: 16 }}>
+          <Field label="Does your child receive any support or services? *">
+            <select style={s.input} value={form.receives_services} onChange={(e) => set("receives_services", e.target.value)}>
+              <option value="">—</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </Field>
+          {form.receives_services === "yes" && (
+            <Field label="Please describe *">
+              <textarea style={{ ...s.input, minHeight: 60 }} value={form.services_description} onChange={(e) => set("services_description", e.target.value)} placeholder="Describe the support or services your child receives…" />
+            </Field>
+          )}
+        </div>
+
+        <Field label="Please add anything else you'd like us to know about your child">
+          <textarea style={{ ...s.input, minHeight: 60 }} value={form.additional_notes} onChange={(e) => set("additional_notes", e.target.value)} placeholder="Optional" />
+        </Field>
       </div>
 
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14, cursor: "pointer" }}>

@@ -433,6 +433,9 @@ function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }
     emergency_contact_name: child?.emergency_contact_name || "",
     emergency_contact_phone: child?.emergency_contact_phone || "",
     emergency_contact_relation: child?.emergency_contact_relation || "",
+    receives_services: child?.receives_services ? "yes" : child?.receives_services === false ? "no" : "",
+    services_description: child?.services_description || "",
+    additional_notes: child?.additional_notes || "",
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -497,6 +500,21 @@ function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }
         <Field label="Relationship"><input style={s.input} value={form.emergency_contact_relation} onChange={(e) => set("emergency_contact_relation", e.target.value)} placeholder="e.g. Mother, Uncle" /></Field>
       </div>
 
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "12px 0", paddingTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: colors.textMid }}>Support & Services</div>
+        <Field label="Receives support or services?">
+          <select style={s.input} value={form.receives_services} onChange={(e) => set("receives_services", e.target.value)}>
+            <option value="">Unknown</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </Field>
+        {form.receives_services === "yes" && (
+          <Field label="Description"><textarea style={{ ...s.input, minHeight: 60 }} value={form.services_description} onChange={(e) => set("services_description", e.target.value)} placeholder="Describe services…" /></Field>
+        )}
+        <Field label="Additional Notes (from parent)"><textarea style={{ ...s.input, minHeight: 60 }} value={form.additional_notes} onChange={(e) => set("additional_notes", e.target.value)} placeholder="Anything else the parent shared…" /></Field>
+      </div>
+
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
         <button onClick={() => {
@@ -517,6 +535,9 @@ function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }
             emergency_contact_name: form.emergency_contact_name.trim(),
             emergency_contact_phone: form.emergency_contact_phone.trim(),
             emergency_contact_relation: form.emergency_contact_relation.trim(),
+            receives_services: form.receives_services === "yes" ? true : form.receives_services === "no" ? false : null,
+            services_description: form.services_description.trim() || null,
+            additional_notes: form.additional_notes.trim() || null,
             grade: form.grade !== "" ? Number(form.grade) : null,
             parent_id: parentId,
             division_override: matchedDivision?.id || null,
@@ -668,8 +689,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
   });
 
   const exportCSV = () => {
-    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Division", "Week", "Status", "Price", "Allergies", "Medical", "Registered"]];
-    filtered.forEach((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : ""; rows.push([`${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "", div?.name || "", wk?.name || "", r.status, `$${(r.price_cents / 100).toFixed(0)}`, c?.allergies || "", c?.medical_notes || c?.medical_info || "", new Date(r.created_at).toLocaleDateString()]); });
+    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Division", "Week", "Status", "Price", "Allergies", "Medical", "Services", "Services Detail", "Additional Notes", "Registered"]];
+    filtered.forEach((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : ""; rows.push([`${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "", div?.name || "", wk?.name || "", r.status, `$${(r.price_cents / 100).toFixed(0)}`, c?.allergies || "", c?.medical_notes || c?.medical_info || "", c?.receives_services ? "Yes" : "No", c?.services_description || "", c?.additional_notes || "", new Date(r.created_at).toLocaleDateString()]);
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-registrations-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!");
   };
