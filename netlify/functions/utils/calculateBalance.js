@@ -12,8 +12,9 @@ function calculateBalance({ children, registrations, divisions, weeks, parent, s
     const siblingElementaryOnly = settings?.sibling_discount_elementary_only ?? false;
     const minFloor = Number(settings?.minimum_weekly_price_cents) || 0;
   
-    // Early bird — placeholder
-    const applyEarlyBird = false; // TODO: enable when decided
+    // Early bird: per-division fixed cents, only on full weeks, before deadline
+    const earlyBirdDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null;
+    const applyEarlyBird = earlyBirdDeadline && new Date() < earlyBirdDeadline;
   
     const divMap = Object.fromEntries(divisions.map((d) => [d.id, d]));
     const weekMap = Object.fromEntries(weeks.map((w) => [w.id, w]));

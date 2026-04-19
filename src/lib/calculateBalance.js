@@ -24,9 +24,9 @@ export function calculateBalance({ children, registrations, divisions, weeks, pa
     // Minimum price floor
     const minFloor = Number(settings?.minimum_weekly_price_cents) || 0;
   
-    // Early bird — placeholder, not applied until decisions are finalized
-    // const earlyBirdDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null;
-    const applyEarlyBird = false; // TODO: enable when early bird rules are decided
+    // Early bird: per-division fixed cents, only on full weeks, before deadline
+    const earlyBirdDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null;
+    const applyEarlyBird = earlyBirdDeadline && new Date() < earlyBirdDeadline;
   
     // Build lookup maps
     const divMap = Object.fromEntries(divisions.map((d) => [d.id, d]));
