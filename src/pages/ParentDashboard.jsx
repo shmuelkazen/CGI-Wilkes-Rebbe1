@@ -266,9 +266,9 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
 
       let discountCents = 0;
       if (code.type === "percent") {
-        discountCents = Math.round((currentBalance * (Number(code.amount) || 0)) / 100);
+        discountCents = Math.round((currentBalance * (Number(code.amount_cents) || 0)) / 100);
       } else {
-        discountCents = Math.min(Number(code.amount) || 0, currentBalance);
+        discountCents = Math.min(Number(code.amount_cents) || 0, currentBalance);
       }
 
       if (discountCents <= 0) { setDiscountError("Discount results in $0 — no change."); return; }
