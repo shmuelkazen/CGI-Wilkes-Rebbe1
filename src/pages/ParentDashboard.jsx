@@ -279,7 +279,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       await sb.query("family_ledger", {
         method: "PATCH",
         body: {
-          total_due_cents: ledger.total_due_cents - discountCents,
+          total_due_cents: (ledger.total_due_cents || 0) - discountCents,
           discount_amount_cents: (ledger.discount_amount_cents || 0) + discountCents,
           updated_at: new Date().toISOString(),
         },
