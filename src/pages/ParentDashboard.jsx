@@ -571,13 +571,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                   <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.total_paid_cents / 100).toFixed(2)}</span>
                 </div>
               )}
-              {ledger.discount_amount_cents > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
-                  <span style={{ color: colors.textMid }}>Discounts</span>
-                  <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.discount_amount_cents / 100).toFixed(2)}</span>
-                </div>
-              )}
-            </div>
+         
 
             {/* Discount Code at Payment */}
             <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, marginBottom: 12 }}>
