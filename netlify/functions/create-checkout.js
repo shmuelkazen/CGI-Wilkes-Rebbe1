@@ -50,7 +50,7 @@ exports.handler = async (event) => {
     const parents = await supabaseQuery("parents", { filters: `&id=eq.${parentId}` });
     const parent = parents && parents[0];
     const email = parentEmail || parent?.email || "";
-    const baseUrl = siteUrl || process.env.SITE_URL || "https://comforting-custard-5d02c6.netlify.app";
+    const baseUrl = siteUrl || process.env.SITE_URL || "https://register.cgikingston.com";
 
     // ── Registration Fee ──
     if (isRegistrationFee) {

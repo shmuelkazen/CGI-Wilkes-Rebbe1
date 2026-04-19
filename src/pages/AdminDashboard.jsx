@@ -387,7 +387,7 @@ function SettingsModal({ settings, onClose, onSave, saving }) {
 }
 
 // ============================================================
-// FAMILY LEDGER MODAL — unchanged
+// FAMILY LEDGER MODAL
 // ============================================================
 function LedgerModal({ ledger, parent, payments, onClose, onRecordPayment, onClearBalance, saving }) {
   const [payForm, setPayForm] = useState({ amount_cents: "", method: "cash", notes: "" });
@@ -417,7 +417,7 @@ function LedgerModal({ ledger, parent, payments, onClose, onRecordPayment, onCle
 }
 
 // ============================================================
-// ADMIN CHILD MODAL — division-aware grade dropdown
+// ADMIN CHILD MODAL — with yes/no toggles
 // ============================================================
 function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }) {
   const isEdit = !!child;
@@ -428,8 +428,12 @@ function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }
     gender: child?.gender || "",
     grade: child?.grade ?? "",
     tshirt_size: child?.tshirt_size || "",
+    has_food_allergies: child?.has_food_allergies === true ? "yes" : child?.has_food_allergies === false ? "no" : (child?.allergies ? "yes" : ""),
     allergies: child?.allergies || "",
+    has_medical_condition: child?.has_medical_condition === true ? "yes" : child?.has_medical_condition === false ? "no" : (child?.medical_notes ? "yes" : ""),
     medical_notes: child?.medical_notes || "",
+    has_medications: child?.has_medications === true ? "yes" : child?.has_medications === false ? "no" : (child?.medications ? "yes" : ""),
+    medications: child?.medications || "",
     emergency_contact_name: child?.emergency_contact_name || "",
     emergency_contact_phone: child?.emergency_contact_phone || "",
     emergency_contact_relation: child?.emergency_contact_relation || "",
@@ -488,8 +492,43 @@ function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }
         </div>
       )}
 
-      <Field label="Allergies *"><input style={s.input} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} placeholder="Write N/A BH if none" /></Field>
-      <Field label="Medical Notes *"><input style={s.input} value={form.medical_notes} onChange={(e) => set("medical_notes", e.target.value)} placeholder="Write N/A BH if none" /></Field>
+      {/* Medical Information — yes/no toggles */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "12px 0", paddingTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: colors.textMid }}>Medical Information</div>
+
+        <Field label="Food allergies or dietary restrictions? *">
+          <select style={s.input} value={form.has_food_allergies} onChange={(e) => set("has_food_allergies", e.target.value)}>
+            <option value="">Unknown</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </Field>
+        {form.has_food_allergies === "yes" && (
+          <Field label="Describe *"><textarea style={{ ...s.input, minHeight: 60 }} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} placeholder="Describe food allergies or dietary restrictions…" /></Field>
+        )}
+
+        <Field label="Medical conditions? *">
+          <select style={s.input} value={form.has_medical_condition} onChange={(e) => set("has_medical_condition", e.target.value)}>
+            <option value="">Unknown</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </Field>
+        {form.has_medical_condition === "yes" && (
+          <Field label="Describe *"><textarea style={{ ...s.input, minHeight: 60 }} value={form.medical_notes} onChange={(e) => set("medical_notes", e.target.value)} placeholder="Describe the medical condition…" /></Field>
+        )}
+
+        <Field label="Takes medication? *">
+          <select style={s.input} value={form.has_medications} onChange={(e) => set("has_medications", e.target.value)}>
+            <option value="">Unknown</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </Field>
+        {form.has_medications === "yes" && (
+          <Field label="Describe *"><textarea style={{ ...s.input, minHeight: 60 }} value={form.medications} onChange={(e) => set("medications", e.target.value)} placeholder="Describe the medication…" /></Field>
+        )}
+      </div>
 
       <div style={{ borderTop: `1px solid ${colors.border}`, margin: "12px 0", paddingTop: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: colors.textMid }}>Emergency Contact</div>
@@ -524,23 +563,27 @@ function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }
           if (form.grade === "") return alert("Class/grade is required.");
           const isPreschool = matchedDivision && (matchedDivision.name || "").toLowerCase().includes("preschool");
           if (!form.tshirt_size && !isPreschool) return alert("T-shirt size is required.");
-          if (!form.allergies.trim()) return alert("Allergies field is required (write N/A BH if none).");
-          if (!form.medical_notes.trim()) return alert("Medical notes field is required (write N/A BH if none).");
           onSave({
-            ...form,
-            first_name: form.first_name.trim(),   
+            first_name: form.first_name.trim(),
             last_name: form.last_name.trim(),
-            allergies: form.allergies.trim(),
-            medical_notes: form.medical_notes.trim(),
+            date_of_birth: form.date_of_birth,
+            gender: form.gender,
+            grade: form.grade !== "" ? Number(form.grade) : null,
+            tshirt_size: form.tshirt_size,
+            has_food_allergies: form.has_food_allergies === "yes",
+            allergies: form.has_food_allergies === "yes" ? form.allergies.trim() : "",
+            has_medical_condition: form.has_medical_condition === "yes",
+            medical_notes: form.has_medical_condition === "yes" ? form.medical_notes.trim() : "",
+            has_medications: form.has_medications === "yes",
+            medications: form.has_medications === "yes" ? form.medications.trim() : "",
             emergency_contact_name: form.emergency_contact_name.trim(),
             emergency_contact_phone: form.emergency_contact_phone.trim(),
             emergency_contact_relation: form.emergency_contact_relation.trim(),
             receives_services: form.receives_services === "yes" ? true : form.receives_services === "no" ? false : null,
             services_description: form.services_description.trim() || null,
             additional_notes: form.additional_notes.trim() || null,
-            grade: form.grade !== "" ? Number(form.grade) : null,
             parent_id: parentId,
-            division_override: matchedDivision?.id || null,
+            assigned_division_id: matchedDivision?.id || null,
           });
         }} disabled={saving} style={s.btn("primary")}>
           {saving ? <Spinner size={16} /> : isEdit ? "Save Changes" : "Add Child"}
@@ -551,7 +594,7 @@ function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }
 }
 
 // ============================================================
-// FAMILY EDIT MODAL — unchanged
+// FAMILY EDIT MODAL
 // ============================================================
 function FamilyEditModal({ parent, familyChildren, divisions, onClose, onSaveParent, onEditChild, onAddChild, saving }) {
   const [form, setForm] = useState({ full_name: parent?.full_name || "", phone: parent?.phone || "", address: parent?.address || "", elrc_status: parent?.elrc_status ?? false });
@@ -679,7 +722,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const handleClearBalance = async (reason) => { setSaving(true); try { const parentId = ledgerModal.parentId; await sb.query("family_ledger", { method: "PATCH", body: { balance_cleared: true, balance_cleared_reason: reason, balance_cleared_by: user.id, balance_cleared_at: new Date().toISOString(), updated_at: new Date().toISOString() }, filters: `&parent_id=eq.${parentId}`, headers: { Prefer: "return=minimal" } }); showToast("Balance cleared!"); load(); openLedger(parentId); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
 
   const handleSaveFamily = async (data) => { setSaving(true); try { await sb.query("parents", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${familyModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Family updated!"); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
-  const handleSaveAdminChild = async (data) => { setSaving(true); try { if (adminChildModal && adminChildModal !== "create") { const { parent_id, division_override, ...updateData } = data; await sb.query("children", { method: "PATCH", body: { ...updateData, updated_at: new Date().toISOString() }, filters: `&id=eq.${adminChildModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Child updated!"); } else { await sb.query("children", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Child added!"); } setAdminChildModal(null); setAdminChildParentId(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
+  const handleSaveAdminChild = async (data) => { setSaving(true); try { if (adminChildModal && adminChildModal !== "create") { const { parent_id, ...updateData } = data; await sb.query("children", { method: "PATCH", body: { ...updateData, updated_at: new Date().toISOString() }, filters: `&id=eq.${adminChildModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Child updated!"); } else { await sb.query("children", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Child added!"); } setAdminChildModal(null); setAdminChildParentId(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
 
   const filtered = registrations.filter((r) => {
     if (filterDivision !== "all" && r.division_id !== filterDivision) return false;
@@ -689,8 +732,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
   });
 
   const exportCSV = () => {
-    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Division", "Week", "Status", "Price", "Allergies", "Medical", "Services", "Services Detail", "Additional Notes", "Registered"]];
-    filtered.forEach((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : ""; rows.push([`${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "", div?.name || "", wk?.name || "", r.status, `$${(r.price_cents / 100).toFixed(0)}`, c?.allergies || "", c?.medical_notes || c?.medical_info || "", c?.receives_services ? "Yes" : "No", c?.services_description || "", c?.additional_notes || "", new Date(r.created_at).toLocaleDateString()]); });
+    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Division", "Week", "Status", "Price", "Food Allergies", "Medical Condition", "Medications", "Services", "Services Detail", "Additional Notes", "Registered"]];
+    filtered.forEach((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : ""; rows.push([`${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "", div?.name || "", wk?.name || "", r.status, `$${(r.price_cents / 100).toFixed(0)}`, c?.has_food_allergies ? `Yes: ${c.allergies}` : "No", c?.has_medical_condition ? `Yes: ${c.medical_notes || c.medical_info || ""}` : "No", c?.has_medications ? `Yes: ${c.medications}` : "No", c?.receives_services ? "Yes" : "No", c?.services_description || "", c?.additional_notes || "", new Date(r.created_at).toLocaleDateString()]); });
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-registrations-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!");
   };

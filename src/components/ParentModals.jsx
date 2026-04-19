@@ -70,8 +70,11 @@ function findDivision(child, divisions) {
 export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions }) => {
   const [form, setForm] = useState({
     first_name: "", last_name: "", date_of_birth: "", gender: "", grade: "",
-    tshirt_size: "", allergies: "", medications: "", dietary_restrictions: "",
-    medical_notes: "", photo_release: false,
+    tshirt_size: "",
+    has_food_allergies: "", allergies: "",
+    has_medical_condition: "", medical_notes: "",
+    has_medications: "", medications: "",
+    receives_services: "", services_description: "", additional_notes: "",
     emergency_contact_name: "", emergency_contact_phone: "", emergency_contact_relation: "",
   });
   const [done, setDone] = useState(false);
@@ -115,12 +118,28 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
       alert("Please select a T-shirt size.");
       return false;
     }
-    if (!form.allergies.trim()) {
-      alert("Please fill in allergies. Write N/A BH if your child has none.");
+    if (!form.has_food_allergies) {
+      alert("Please indicate whether your child has any food allergies or dietary restrictions.");
       return false;
     }
-    if (!form.medical_notes.trim()) {
-      alert("Please fill in medical conditions. Write N/A BH if your child has none.");
+    if (form.has_food_allergies === "yes" && !form.allergies.trim()) {
+      alert("Please describe your child's food allergies or dietary restrictions.");
+      return false;
+    }
+    if (!form.has_medical_condition) {
+      alert("Please indicate whether your child has any medical conditions.");
+      return false;
+    }
+    if (form.has_medical_condition === "yes" && !form.medical_notes.trim()) {
+      alert("Please describe your child's medical condition.");
+      return false;
+    }
+    if (!form.has_medications) {
+      alert("Please indicate whether your child takes any medication.");
+      return false;
+    }
+    if (form.has_medications === "yes" && !form.medications.trim()) {
+      alert("Please describe your child's medication.");
       return false;
     }
     if (!form.emergency_contact_name || !form.emergency_contact_phone) {
@@ -146,14 +165,26 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
       grade: form.grade === "" ? null : parseInt(form.grade),
       assigned_division_id: matchedDivision?.id || null,
       division_override: false,
+      has_food_allergies: form.has_food_allergies === "yes",
+      allergies: form.has_food_allergies === "yes" ? form.allergies.trim() : "",
+      has_medical_condition: form.has_medical_condition === "yes",
+      medical_notes: form.has_medical_condition === "yes" ? form.medical_notes.trim() : "",
+      has_medications: form.has_medications === "yes",
+      medications: form.has_medications === "yes" ? form.medications.trim() : "",
+      receives_services: form.receives_services === "yes" ? true : form.receives_services === "no" ? false : null,
+      services_description: form.receives_services === "yes" ? (form.services_description || "").trim() : null,
+      additional_notes: (form.additional_notes || "").trim() || null,
+      photo_release: true,
     };
     const success = await onSave(childData);
     if (success !== false) {
       if (addAnother) {
         setForm((prev) => ({
           first_name: "", last_name: "", date_of_birth: "", gender: "", grade: "",
-          tshirt_size: "", allergies: "", medications: "", dietary_restrictions: "",
-          medical_notes: "", photo_release: false,
+          tshirt_size: "",
+          has_food_allergies: "", allergies: "",
+          has_medical_condition: "", medical_notes: "",
+          has_medications: "", medications: "",
           receives_services: "", services_description: "", additional_notes: "",
           emergency_contact_name: prev.emergency_contact_name,
           emergency_contact_phone: prev.emergency_contact_phone,
@@ -239,14 +270,48 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
         <Field label="Relationship"><input style={s.input} value={form.emergency_contact_relation} onChange={(e) => set("emergency_contact_relation", e.target.value)} placeholder="e.g. Grandparent, Aunt, Neighbor" /></Field>
       </div>
 
-      {/* Medical — now mandatory */}
+      {/* Medical Information */}
       <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 20 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Medical Information</div>
-        <div style={{ fontSize: 12, color: colors.textMid, marginBottom: 12 }}>All fields marked * are required. Write <strong>N/A BH</strong> if not applicable.</div>
-        <Field label="Allergies *"><textarea style={{ ...s.input, minHeight: 60 }} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} placeholder="N/A BH" /></Field>
-        <Field label="Medical Conditions *"><textarea style={{ ...s.input, minHeight: 60 }} value={form.medical_notes} onChange={(e) => set("medical_notes", e.target.value)} placeholder="N/A BH" /></Field>
-        <Field label="Medications"><textarea style={{ ...s.input, minHeight: 60 }} value={form.medications} onChange={(e) => set("medications", e.target.value)} placeholder="Current medications…" /></Field>
-        <Field label="Dietary Restrictions"><input style={s.input} value={form.dietary_restrictions} onChange={(e) => set("dietary_restrictions", e.target.value)} placeholder="e.g. vegetarian, nut-free, kosher" /></Field>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Medical Information</div>
+
+        <Field label="Does your child have any food allergies or dietary restrictions? *">
+          <select style={s.input} value={form.has_food_allergies} onChange={(e) => set("has_food_allergies", e.target.value)}>
+            <option value="">—</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </Field>
+        {form.has_food_allergies === "yes" && (
+          <Field label="Please describe *">
+            <textarea style={{ ...s.input, minHeight: 60 }} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} placeholder="Describe food allergies or dietary restrictions…" />
+          </Field>
+        )}
+
+        <Field label="Does your child have any medical conditions? *">
+          <select style={s.input} value={form.has_medical_condition} onChange={(e) => set("has_medical_condition", e.target.value)}>
+            <option value="">—</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </Field>
+        {form.has_medical_condition === "yes" && (
+          <Field label="Please describe *">
+            <textarea style={{ ...s.input, minHeight: 60 }} value={form.medical_notes} onChange={(e) => set("medical_notes", e.target.value)} placeholder="Describe the medical condition…" />
+          </Field>
+        )}
+
+        <Field label="Does your child take any medication? *">
+          <select style={s.input} value={form.has_medications} onChange={(e) => set("has_medications", e.target.value)}>
+            <option value="">—</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </Field>
+        {form.has_medications === "yes" && (
+          <Field label="Please describe *">
+            <textarea style={{ ...s.input, minHeight: 60 }} value={form.medications} onChange={(e) => set("medications", e.target.value)} placeholder="Describe the medication…" />
+          </Field>
+        )}
 
         {/* Services / Support */}
         <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0 12px", paddingTop: 16 }}>
@@ -269,10 +334,10 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
         </Field>
       </div>
 
-      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14, cursor: "pointer" }}>
-        <input type="checkbox" checked={form.photo_release} onChange={(e) => set("photo_release", e.target.checked)} />
-        I authorize CGI Wilkes Rebbe to photograph/video my child for promotional use.
-      </label>
+      <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 20, fontStyle: "italic" }}>
+        Registration implies consent to photo and video of your child. Email us if you need to opt out.
+      </div>
+
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
         <button onClick={() => handleSave(true)} disabled={saving} style={s.btn("secondary")}>
