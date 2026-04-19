@@ -116,23 +116,65 @@ exports.handler = async (event) => {
     const weekMap = Object.fromEntries(weeks.map((w) => [w.id, w]));
     const childMap = Object.fromEntries((children || []).map((c) => [c.id, c]));
 
-    const description = registrations.map((r) => {
-      const child = childMap[r.child_id];
-      const div = divMap[r.division_id];
-      const wk = weekMap[r.week_id];
-      return `${child?.first_name || "?"} — ${div?.name || "?"} ${wk?.name || ""}`;
-    }).join(", ");
+    // Group registrations by child
+    const regsByChild = {};
+    for (const r of registrations) {
+      if (!regsByChild[r.child_id]) regsByChild[r.child_id] = [];
+      regsByChild[r.child_id].push(r);
+    }
+
+    // Build one line item per camper
+    const totalRegs = registrations.length;
+    const perRegCents = Math.floor(amountCents / totalRegs);
+    let centsAssigned = 0;
+    const childEntries = Object.entries(regsByChild);
+
+    const line_items = childEntries.map(([childId, regs], idx) => {
+      const child = childMap[childId];
+      const childName = child ? `${child.first_name} ${child.last_name}` : "Camper";
+      const divNames = [...new Set(regs.map((r) => divMap[r.division_id]?.name).filter(Boolean))];
+      const weekNames = regs
+        .map((r) => weekMap[r.week_id]?.name)
+        .filter(Boolean)
+        .sort();
+
+      // Format week range (e.g. "Weeks 1–8") or list
+      const weekNums = weekNames.map((w) => {
+        const m = w.match(/(\d+)/);
+        return m ? parseInt(m[1]) : null;
+      }).filter(Boolean).sort((a, b) => a - b);
+
+      let weekLabel;
+      if (weekNums.length > 1 && weekNums[weekNums.length - 1] - weekNums[0] === weekNums.length - 1) {
+        weekLabel = `Weeks ${weekNums[0]}–${weekNums[weekNums.length - 1]}`;
+      } else {
+        weekLabel = weekNums.length > 0 ? `Weeks ${weekNums.join(", ")}` : `${regs.length} week(s)`;
+      }
+
+      // Distribute cents proportionally by number of registrations
+      // Last child gets the remainder to ensure total is exact
+      const isLast = idx === childEntries.length - 1;
+      const childCents = isLast
+        ? amountCents - centsAssigned
+        : perRegCents * regs.length;
+      centsAssigned += childCents;
+
+      return {
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: `${childName} — ${divNames.join(", ") || "Camp"}`,
+            description: weekLabel,
+          },
+          unit_amount: childCents,
+        },
+        quantity: 1,
+      };
+    });
 
     const checkoutSession = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
-      line_items: [{
-        price_data: {
-          currency: "usd",
-          product_data: { name: `CGI Wilkes Rebbe — ${childNames || "Camp Registration"}`, description: description || "Camp registration payment" },
-          unit_amount: amountCents,
-        },
-        quantity: 1,
-      }],
+      line_items,
       mode: "payment",
       customer_email: email,
       success_url: `${baseUrl}?payment=success`,
