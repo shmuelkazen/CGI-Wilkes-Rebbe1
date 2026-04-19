@@ -334,7 +334,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
       </div>
 
       <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 20, fontStyle: "italic" }}>
-        Registration implies consent to photo and video of your child. Email us if you need to opt out.
+        Registration implies consent to post photos and videos of your child on WhatsApp and the camp website. Email us if you need to opt out.
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -713,13 +713,25 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
 // ============================================================
 export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
   const [form, setForm] = useState({
-    full_name: parent.full_name || "",
+    first_name: parent.first_name || "",
+    last_name: parent.last_name || "",
     phone: parent.phone || "",
     address: parent.address || "",
     elrc_status: parent.elrc_status ?? false,
     elrc_acknowledged: parent.elrc_acknowledged ?? false,
   });
-  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const [errors, setErrors] = useState({});
+  const set = (k, v) => { setForm((p) => ({ ...p, [k]: v })); setErrors((p) => ({ ...p, [k]: null })); };
+
+  // Format phone as user types: (555) 123-4567
+  const handlePhone = (raw) => {
+    const digits = raw.replace(/\D/g, "").slice(0, 10);
+    let formatted = digits;
+    if (digits.length > 6) formatted = `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+    else if (digits.length > 3) formatted = `(${digits.slice(0,3)}) ${digits.slice(3)}`;
+    else if (digits.length > 0) formatted = `(${digits}`;
+    set("phone", formatted);
+  };
 
   const handleElrcToggle = (checked) => {
     if (checked && !form.elrc_acknowledged) {
@@ -729,11 +741,54 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
     }
   };
 
+  const validate = () => {
+    const errs = {};
+    if (!form.first_name.trim()) errs.first_name = "First name is required.";
+    if (!form.last_name.trim()) errs.last_name = "Last name is required.";
+
+    // Phone: must have 10 digits
+    const phoneDigits = form.phone.replace(/\D/g, "");
+    if (!phoneDigits) errs.phone = "Phone number is required.";
+    else if (phoneDigits.length < 10) errs.phone = "Enter a full 10-digit phone number.";
+
+    // Address: must look like a real address (has a number and text, reasonable length)
+    const addr = form.address.trim();
+    if (!addr) errs.address = "Address is required.";
+    else if (addr.length < 8) errs.address = "Please enter your full street address.";
+    else if (!/\d/.test(addr)) errs.address = "Address should include a street number.";
+    else if (!/[a-zA-Z]/.test(addr)) errs.address = "Address should include a street name.";
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const errStyle = { fontSize: 12, color: colors.coral || "#e53e3e", marginTop: 2 };
+  const inputErr = (field) => errors[field] ? { ...s.input, borderColor: colors.coral || "#e53e3e" } : s.input;
+
   return (
     <Modal title="My Profile" onClose={onClose}>
-      <Field label="Full Name"><input style={s.input} value={form.full_name} onChange={(e) => set("full_name", e.target.value)} /></Field>
-      <Field label="Phone"><input style={s.input} value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="(555) 123-4567" /></Field>
-      <Field label="Address"><input style={s.input} value={form.address} onChange={(e) => set("address", e.target.value)} /></Field>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="First Name *">
+            <input style={inputErr("first_name")} value={form.first_name} onChange={(e) => set("first_name", e.target.value)} />
+            {errors.first_name && <div style={errStyle}>{errors.first_name}</div>}
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Last Name *">
+            <input style={inputErr("last_name")} value={form.last_name} onChange={(e) => set("last_name", e.target.value)} />
+            {errors.last_name && <div style={errStyle}>{errors.last_name}</div>}
+          </Field>
+        </div>
+      </div>
+      <Field label="Phone *">
+        <input style={inputErr("phone")} value={form.phone} onChange={(e) => handlePhone(e.target.value)} placeholder="(555) 123-4567" inputMode="tel" />
+        {errors.phone && <div style={errStyle}>{errors.phone}</div>}
+      </Field>
+      <Field label="Address *">
+        <input style={inputErr("address")} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="123 Main St, City, State ZIP" />
+        {errors.address && <div style={errStyle}>{errors.address}</div>}
+      </Field>
 
       {/* ELRC Self-Identification */}
       <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
@@ -757,8 +812,18 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
         <button onClick={() => {
+          if (!validate()) return;
           if (form.elrc_status && !form.elrc_acknowledged) return alert("Please acknowledge the ELRC disclaimer before saving.");
-          onSave(form);
+          onSave({
+            first_name: form.first_name.trim(),
+            last_name: form.last_name.trim(),
+            full_name: `${form.first_name.trim()} ${form.last_name.trim()}`,
+            phone: form.phone.trim(),
+            address: form.address.trim(),
+            elrc_status: form.elrc_status,
+            elrc_acknowledged: form.elrc_acknowledged,
+            updated_at: new Date().toISOString(),
+          });
         }} disabled={saving} style={s.btn("primary")}>{saving ? <Spinner size={16} /> : "Save"}</button>
       </div>
     </Modal>
