@@ -504,12 +504,13 @@ function AdminChildModal({ child, parentId, divisions, onClose, onSave, saving }
           if (!form.date_of_birth) return alert("Date of birth is required.");
           if (!form.gender) return alert("Gender is required.");
           if (form.grade === "") return alert("Class/grade is required.");
-          if (!form.tshirt_size) return alert("T-shirt size is required.");
+          const isPreschool = matchedDivision && (matchedDivision.name || "").toLowerCase().includes("preschool");
+          if (!form.tshirt_size && !isPreschool) return alert("T-shirt size is required.");
           if (!form.allergies.trim()) return alert("Allergies field is required (write N/A BH if none).");
           if (!form.medical_notes.trim()) return alert("Medical notes field is required (write N/A BH if none).");
           onSave({
             ...form,
-            first_name: form.first_name.trim(),
+            first_name: form.first_name.trim(),   
             last_name: form.last_name.trim(),
             allergies: form.allergies.trim(),
             medical_notes: form.medical_notes.trim(),

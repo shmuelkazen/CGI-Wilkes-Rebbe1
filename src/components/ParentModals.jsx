@@ -110,7 +110,8 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
       alert("Please select a class/grade.");
       return false;
     }
-    if (!form.tshirt_size) {
+    const isPreschool = matchedDivision && (matchedDivision.name || "").toLowerCase().includes("preschool");
+    if (!form.tshirt_size && !isPreschool) {
       alert("Please select a T-shirt size.");
       return false;
     }
