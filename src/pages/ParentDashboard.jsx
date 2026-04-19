@@ -46,6 +46,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [payingFee, setPayingFee] = useState(false);
   const [shirtOrders, setShirtOrders] = useState([]);
   const [shirtCart, setShirtCart] = useState({});
+  const [enrollment, setEnrollment] = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -90,6 +91,12 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         const shirts = await sb.query("shirt_orders", { filters: `&parent_id=eq.${user.id}&order=created_at.desc` });
         setShirtOrders(shirts || []);
       } catch { setShirtOrders([]); }
+
+      // Load enrollment counts for capacity display
+      try {
+        const enr = await sb.query("rpc/get_week_enrollment");
+        setEnrollment(enr || []);
+      } catch { setEnrollment([]); }
 
       // Check if address is missing
       if (p && (!p.address || !p.address.trim())) {
@@ -568,6 +575,24 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                         {div ? ` · ${div.name}` : ""}
                         {child.tshirt_size ? ` · ${child.tshirt_size}` : ""}
                       </div>
+                      {(() => {
+                        const caps = div?.class_capacities;
+                        if (!caps || child.grade == null) return null;
+                        const classNames = { "-5": "Infants", "-4": "Toddler", "-3": "Pre Nursery", "-2": "Nursery", "-1": "Pre K" };
+                        const clsName = classNames[String(child.grade)];
+                        if (!clsName || caps[clsName] == null) return null;
+                        const cap = caps[clsName];
+                        const divWeeks = weeks.filter((w) => w.division_id === div.id);
+                        const minRemaining = divWeeks.length > 0 ? Math.min(...divWeeks.map((w) => {
+                          const enrolled = enrollment.filter((e) => e.week_id === w.id && e.grade === child.grade).reduce((sum, e) => sum + (e.enrolled || 0), 0);
+                          return cap - enrolled;
+                        })) : cap;
+                        return (
+                          <div style={{ fontSize: 12, marginTop: 4, color: minRemaining <= 3 ? (colors.coral || "#e53e3e") : colors.success, fontWeight: 600 }}>
+                            {clsName} — {minRemaining <= 0 ? "class is full" : `${minRemaining} spot${minRemaining !== 1 ? "s" : ""} available`}
+                          </div>
+                        );
+                      })()}
                       {regs.length > 0 && (
                         <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                           {regs.filter((r) => r.status !== "cancelled").map((r) => {
@@ -730,6 +755,24 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                           `${w.name} (${fmtDate(w.start_date)})`
                         ).join(", ")}
                       </div>
+                      {div.class_capacities && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                          {Object.entries(div.class_capacities).map(([cls, cap]) => {
+                            const gradeVal = { "Infants": -5, "Toddler": -4, "Pre Nursery": -3, "Nursery": -2, "Pre K": -1 }[cls];
+                            const divWks = weeks.filter((w) => w.division_id === div.id);
+                            const totalSlots = cap * divWks.length;
+                            const totalEnrolled = divWks.reduce((sum, w) => {
+                              return sum + enrollment.filter((e) => e.week_id === w.id && e.division_id === div.id && e.grade === gradeVal).reduce((s2, e) => s2 + (e.enrolled || 0), 0);
+                            }, 0);
+                            const avgRemaining = divWks.length > 0 ? Math.round((totalSlots - totalEnrolled) / divWks.length) : cap;
+                            return (
+                              <span key={cls} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: avgRemaining <= 3 ? (colors.amberLight || "#fef3c7") : (colors.forestPale || "#f0fdf4"), color: avgRemaining <= 0 ? (colors.coral || "#e53e3e") : avgRemaining <= 3 ? (colors.amber || "#d97706") : colors.success }}>
+                                {cls}: {avgRemaining <= 0 ? "full" : `${avgRemaining} spots`}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                       {div.early_bird_discount_cents > 0 && settings?.early_bird_deadline && (
                         <div style={{ fontSize: 12, color: colors.success, marginTop: 4 }}>
                           Early bird: ${((displayPrice - div.early_bird_discount_cents) / 100).toFixed(0)}/week if paid by {fmtDate(settings.early_bird_deadline, { month: "short", day: "numeric" })}
