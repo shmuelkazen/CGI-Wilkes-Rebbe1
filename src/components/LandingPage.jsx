@@ -76,6 +76,10 @@ export default function LandingPage({ onSignIn, onEmailSignIn, onEmailSignUp, lo
           <button onClick={() => setMode("signup")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.7)", fontSize: 14, padding: "10px 20px", width: "100%", justifyContent: "center" }}>
             New parent? Create an account
           </button>
+
+          <div style={{ marginTop: 32, fontSize: 12, color: "rgba(255,255,255,.4)" }}>
+            <a href="/privacy.html" style={{ color: "rgba(255,255,255,.5)", textDecoration: "underline" }}>Privacy Policy</a>
+          </div>
         </div>
       </div>
     );
@@ -159,6 +163,10 @@ export default function LandingPage({ onSignIn, onEmailSignIn, onEmailSignUp, lo
         <button onClick={onSignIn} disabled={loading} style={{ ...s.btn("secondary"), background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.2)", color: "#fff", fontSize: 14, padding: "11px 24px", borderRadius: 10, width: "100%", justifyContent: "center", gap: 10 }}>
           {Icons.google({ size: 18 })} Continue with Google
         </button>
+
+        <div style={{ marginTop: 32, fontSize: 12, color: "rgba(255,255,255,.4)", textAlign: "center" }}>
+          <a href="/privacy.html" style={{ color: "rgba(255,255,255,.5)", textDecoration: "underline" }}>Privacy Policy</a>
+        </div>
       </div>
     </div>  
   );
