@@ -3,6 +3,7 @@ import sb from "../lib/supabase";
 import { colors, font, s } from "../lib/styles";
 import Icons from "../lib/icons";
 import { Spinner, EmptyState, StatusBadge, Modal, Field } from "../components/UI";
+import { RegisterModal } from "../components/ParentModals";
 
 // ============================================================
 // SHARED HELPERS
@@ -388,7 +389,7 @@ function SettingsModal({ settings, onClose, onSave, saving }) {
 // ============================================================
 // FAMILY LEDGER MODAL
 // ============================================================
-function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRecordPayment, onClearBalance, saving }) {
+function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRegisterChild, onRecordPayment, onClearBalance, saving }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ full_name: parent?.full_name || "", phone: parent?.phone || "", address: parent?.address || "", elrc_status: parent?.elrc_status ?? false });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -465,6 +466,7 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
                     {div && <span style={{ color: colors.forest }}> · {div.name}</span>}
                   </div>
                   <button onClick={() => onEditChild(kid)} style={{ ...s.btn("ghost"), padding: "2px 6px", fontSize: 11 }}>{Icons.edit({ size: 11 })} Edit</button>
+                  <button onClick={() => onRegisterChild(kid)} style={{ ...s.btn("ghost"), padding: "2px 6px", fontSize: 11, color: colors.forest }}>{Icons.calendar({ size: 11, color: colors.forest })} Register</button>
                 </div>
                 {kid.has_food_allergies && <div style={{ fontSize: 11, color: colors.textMid }}>Allergies: {kid.allergies}</div>}
                 {kid.has_medical_condition && <div style={{ fontSize: 11, color: colors.textMid }}>Medical: {kid.medical_notes}</div>}
@@ -715,6 +717,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const [familyModal, setFamilyModal] = useState(null);
   const [adminChildModal, setAdminChildModal] = useState(null);
   const [adminChildParentId, setAdminChildParentId] = useState(null);
+  const [registerChild, setRegisterChild] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -783,6 +786,45 @@ export default function AdminDashboard({ user, setView, showToast }) {
 
   const handleSaveFamily = async (data) => { setSaving(true); try { await sb.query("parents", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${familyModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Family updated!"); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
   const handleSaveAdminChild = async (data) => { setSaving(true); try { if (adminChildModal && adminChildModal !== "create") { const { parent_id, ...updateData } = data; await sb.query("children", { method: "PATCH", body: { ...updateData, updated_at: new Date().toISOString() }, filters: `&id=eq.${adminChildModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Child updated!"); } else { await sb.query("children", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Child added!"); } setAdminChildModal(null); setAdminChildParentId(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
+
+  const handleAdminRegister = async (regData) => {
+    setSaving(true);
+    try {
+      for (const week of regData.weeks) {
+        await sb.query("registrations", {
+          method: "POST",
+          body: { child_id: regData.child_id, division_id: week.division_id, week_id: week.week_id, price_cents: week.price_cents, status: "pending" },
+          headers: { Prefer: "return=minimal" },
+        });
+      }
+      const parentId = registerChild?.parent_id;
+      if (parentId) {
+        const ledger = ledgerMap[parentId];
+        const currentDue = (ledger?.total_due_cents || 0) + regData.total_cents;
+        if (ledger) {
+          await sb.query("family_ledger", {
+            method: "PATCH",
+            body: { total_due_cents: currentDue, discount_amount_cents: (ledger.discount_amount_cents || 0) + regData.discount_cents, updated_at: new Date().toISOString() },
+            filters: `&parent_id=eq.${parentId}`,
+            headers: { Prefer: "return=minimal" },
+          });
+        } else {
+          await sb.query("family_ledger", {
+            method: "POST",
+            body: { parent_id: parentId, total_due_cents: regData.total_cents, discount_amount_cents: regData.discount_cents },
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+      }
+      showToast(`Registered for ${regData.weeks.length} week${regData.weeks.length !== 1 ? "s" : ""}!`);
+      setRegisterChild(null);
+      load();
+    } catch (e) {
+      if (e.message?.includes("unique") || e.message?.includes("duplicate")) {
+        alert("This child is already registered for one of the selected weeks.");
+      } else { alert("Error: " + e.message); }
+    } finally { setSaving(false); }
+  };
 
   const filtered = registrations.filter((r) => {
     if (filterDivision !== "all" && r.division_id !== filterDivision) return false;
@@ -976,7 +1018,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                 <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}>{o.status === "paid" && (<button onClick={async () => { try { await sb.query("shirt_orders", { method: "PATCH", body: { status: "fulfilled", updated_at: new Date().toISOString() }, filters: `&id=eq.${o.id}`, headers: { Prefer: "return=minimal" } }); showToast("Marked as fulfilled!"); load(); } catch (e) { alert("Error: " + e.message); } }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Fulfilled</button>)}{o.status === "pending" && (<button onClick={async () => { if (!window.confirm("Delete this unpaid order?")) return; try { await sb.query("shirt_orders", { method: "DELETE", filters: `&id=eq.${o.id}` }); showToast("Order deleted."); load(); } catch (e) { alert("Error: " + e.message); } }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.trash({ size: 13, color: colors.coral })}</button>)}</div></td>
               </tr>); })}</tbody></table></div>
           )}
-        </div>)}  
+        </div>)}
       </div>
 
       {/* Modals */}
@@ -984,8 +1026,9 @@ export default function AdminDashboard({ user, setView, showToast }) {
       {weekModal && <WeekModal week={weekModal === "create" ? null : weekModal} division={weekModalDivision} onClose={() => { setWeekModal(null); setWeekModalDivision(null); }} onSave={handleSaveWeek} saving={saving} />}
       {discountModal && <DiscountCodeModal code={discountModal === "create" ? null : discountModal} onClose={() => setDiscountModal(null)} onSave={async (data) => { setSaving(true); try { if (discountModal === "create") { await sb.query("discount_codes", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Discount code created!"); } else { await sb.query("discount_codes", { method: "PATCH", body: data, filters: `&id=eq.${discountModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Discount code updated!"); } setDiscountModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } }} saving={saving} />}
       {settingsModal && <SettingsModal settings={settings} onClose={() => setSettingsModal(false)} onSave={handleSaveSettings} saving={saving} />}
-      {familyModal && !adminChildModal && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} saving={saving} />}
+      {familyModal && !adminChildModal && !registerChild && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRegisterChild={(kid) => setRegisterChild(kid)} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} saving={saving} />}
       {adminChildModal && <AdminChildModal child={adminChildModal === "create" ? null : adminChildModal} parentId={adminChildParentId} divisions={divisions} onClose={() => { setAdminChildModal(null); setAdminChildParentId(null); }} onSave={handleSaveAdminChild} saving={saving} />}
+      {registerChild && <RegisterModal child={registerChild} divisions={divisions} weeks={weeks} existingRegs={registrations.filter((r) => r.child_id === registerChild.id && r.status !== "cancelled")} settings={settings} siblingCount={children.filter((c) => c.parent_id === registerChild.parent_id).length} parent={parentMap[registerChild.parent_id]} onClose={() => setRegisterChild(null)} onRegister={handleAdminRegister} saving={saving} />}
     </div>
   );
 }
