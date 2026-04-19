@@ -426,6 +426,7 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
   const earlyBirdDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null;
   const earlyBirdPerWeek = division?.early_bird_discount_cents || 0;
   const showEarlyBird = earlyBirdDeadline && earlyBirdPerWeek > 0;
+  const isBeforeEarlyBird = showEarlyBird && new Date() < earlyBirdDeadline;
 
   // Sibling discount
   const siblingStartsAt = settings?.sibling_discount_starts_at ?? 2;
@@ -486,8 +487,8 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
   const finalEarlyBird = Math.max(0, totalEarlyBird - codeDiscount);
   const finalRegular = Math.max(0, totalRegular - codeDiscount);
 
-  // What goes on the ledger is the regular price (not early bird)
-  const ledgerTotal = finalRegular;
+  // What goes on the ledger — early bird if before deadline, otherwise regular
+  const ledgerTotal = isBeforeEarlyBird ? finalEarlyBird : finalRegular;
 
   const applyCode = async () => {
     if (!discountCode.trim()) return;
@@ -556,7 +557,7 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
       </div>
 
       {/* Early bird notice */}
-      {showEarlyBird && earlyBirdDeadline && (
+      {isBeforeEarlyBird && earlyBirdDeadline && (
         <div style={{ background: colors.forestPale, border: `1px solid ${colors.success}`, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
           {Icons.dollar({ size: 14, color: colors.success })} <strong>Early Bird:</strong> Save ${(earlyBirdPerWeek / 100).toFixed(0)}/week on full weeks when paid in full by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
         </div>
@@ -650,6 +651,13 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
                   <span>−${(siblingTotal / 100).toFixed(2)}</span>
                 </div>
               )}
+              {/* Show early bird as applied discount */}
+              {isBeforeEarlyBird && earlyBirdTotal > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success, marginBottom: 4 }}>
+                  <span>Early bird discount (full weeks)</span>
+                  <span>−${(earlyBirdTotal / 100).toFixed(2)}</span>
+                </div>
+              )}
               {codeDiscount > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success, marginBottom: 4 }}>
                   <span>Code: {appliedDiscount.code}</span>
@@ -657,26 +665,13 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
                 </div>
               )}
 
-              {/* Show early bird as potential savings */}
-              {showEarlyBird && earlyBirdTotal > 0 && (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 6, fontFamily: font.display, fontSize: 18 }}>
-                    <span>If paid by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-                    <span style={{ color: colors.success }}>${(finalEarlyBird / 100).toFixed(2)}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.textMid, marginTop: 2 }}>
-                    <span>Early bird saves ${(earlyBirdTotal / 100).toFixed(0)} (full weeks only)</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontFamily: font.display, fontSize: 20 }}>
-                    <span>Regular price</span>
-                    <span style={{ color: colors.forest }}>${(finalRegular / 100).toFixed(2)}</span>
-                  </div>
-                </>
-              )}
-              {(!showEarlyBird || earlyBirdTotal === 0) && (
-                <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 6, fontFamily: font.display, fontSize: 20 }}>
-                  <span>Total</span>
-                  <span style={{ color: colors.forest }}>${(finalRegular / 100).toFixed(2)}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 6, fontFamily: font.display, fontSize: 20 }}>
+                <span>Total</span>
+                <span style={{ color: colors.forest }}>${((isBeforeEarlyBird ? finalEarlyBird : finalRegular) / 100).toFixed(2)}</span>
+              </div>
+              {isBeforeEarlyBird && (
+                <div style={{ fontSize: 12, color: colors.textMid, marginTop: 4 }}>
+                  Early bird rate applied — must pay in full by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
                 </div>
               )}
             </div>
@@ -690,14 +685,14 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
                 const weekRegs = selectedWeeks.map((w) => ({
                   week_id: w.id,
                   division_id: child.assigned_division_id,
-                  price_cents: calcWeekPriceRegular(w),
+                  price_cents: isBeforeEarlyBird ? calcWeekPriceWithEarlyBird(w) : calcWeekPriceRegular(w),
                 }));
                 onRegister({
                   child_id: child.id,
                   weeks: weekRegs,
                   subtotal_cents: subtotal,
-                  discount_cents: subtotal - finalRegular,
-                  total_cents: finalRegular,
+                  discount_cents: subtotal - (isBeforeEarlyBird ? finalEarlyBird : finalRegular),
+                  total_cents: isBeforeEarlyBird ? finalEarlyBird : finalRegular,
                   discount_code_id: appliedDiscount?.id || null,
                 });
               }}
