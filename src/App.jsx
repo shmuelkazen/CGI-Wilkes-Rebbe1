@@ -11,7 +11,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [toast, setToast] = useState(null);
-  const [authLoading, setAuthLoading] = useState(false);
+  const [landingMode, setLandingMode] = useState("landing");
 
   const showToast = useCallback((msg) => setToast(msg), []);
 
@@ -26,10 +26,18 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      // Check OAuth callback first
-      const cbSession = await sb.handleOAuthCallback();
-      if (cbSession) {
-        await completeLogin(cbSession.user);
+      // Check for recovery callback first (from password reset email link)
+      const recovery = await sb.handleRecoveryCallback();
+      if (recovery) {
+        if (recovery.type === "recovery") {
+          // Show the "set new password" form
+          setUser(recovery.session.user);
+          setLandingMode("newpassword");
+          setView("landing");
+          return;
+        }
+        // Any other hash callback — just log in
+        await completeLogin(recovery.session.user);
         return;
       }
       // Check existing session
@@ -42,12 +50,6 @@ export default function App() {
     })();
   }, []);
 
-  // Google OAuth
-  const handleGoogleSignIn = async () => {
-    setAuthLoading(true);
-    await sb.signInWithGoogle();
-  };
-
   // Email/password sign in
   const handleEmailSignIn = async (email, password) => {
     const session = await sb.signInWithEmail(email, password);
@@ -57,15 +59,24 @@ export default function App() {
   // Email/password sign up
   const handleEmailSignUp = async (email, password, fullName) => {
     const data = await sb.signUpWithEmail(email, password, fullName);
-    // If Supabase requires email confirmation, data won't have access_token
     if (data.access_token && data.user) {
       await completeLogin(data.user);
     } else if (data.user && !data.access_token) {
-      // Email confirmation required
       throw new Error("Check your email for a confirmation link, then come back and sign in.");
     } else {
       throw new Error("Something went wrong during signup.");
     }
+  };
+
+  // Forgot password
+  const handleForgotPassword = async (email) => {
+    await sb.resetPassword(email);
+  };
+
+  // Update password (after recovery)
+  const handleUpdatePassword = async (newPassword) => {
+    await sb.updatePassword(newPassword);
+    await completeLogin(sb.user);
   };
 
   return (
@@ -79,10 +90,11 @@ export default function App() {
       )}
       {view === "landing" && (
         <LandingPage
-          onSignIn={handleGoogleSignIn}
           onEmailSignIn={handleEmailSignIn}
           onEmailSignUp={handleEmailSignUp}
-          loading={authLoading}
+          onForgotPassword={handleForgotPassword}
+          onUpdatePassword={handleUpdatePassword}
+          initialMode={landingMode}
         />
       )}
       {view === "parent" && user && <ParentDashboard user={user} isAdmin={isAdmin} setView={setView} showToast={showToast} />}

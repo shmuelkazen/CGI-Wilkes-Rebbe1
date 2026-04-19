@@ -91,11 +91,6 @@ const sb = {
     this.user = null;
   },
 
-  async signInWithGoogle() {
-    const redirectTo = window.location.origin + window.location.pathname;
-    window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
-  },
-
   async signInWithEmail(email, password) {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: "POST",
@@ -132,13 +127,49 @@ const sb = {
     return data;
   },
 
-  async handleOAuthCallback() {
+  async resetPassword(email) {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({
+        email,
+        redirect_to: window.location.origin,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error_description || err.msg || "Failed to send reset email");
+    }
+    return true;
+  },
+
+  async updatePassword(newPassword) {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${this.token}`,
+      },
+      body: JSON.stringify({ password: newPassword }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error_description || err.msg || "Failed to update password");
+    }
+    return await res.json();
+  },
+
+  // Handles recovery token from password reset email link
+  async handleRecoveryCallback() {
     const hash = window.location.hash;
     if (!hash || !hash.includes("access_token")) return null;
     const params = new URLSearchParams(hash.substring(1));
     const access_token = params.get("access_token");
     const refresh_token = params.get("refresh_token");
+    const type = params.get("type");
     if (!access_token) return null;
+
     const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { Authorization: `Bearer ${access_token}`, apikey: SUPABASE_ANON_KEY },
     });
@@ -147,7 +178,7 @@ const sb = {
     const session = { access_token, refresh_token, user };
     this.setSession(session);
     window.history.replaceState(null, "", window.location.pathname);
-    return session;
+    return { session, type: type || "login" };
   },
 
   async signOut() {
