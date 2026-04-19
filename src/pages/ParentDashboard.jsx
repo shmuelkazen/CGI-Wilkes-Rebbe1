@@ -47,6 +47,9 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [shirtOrders, setShirtOrders] = useState([]);
   const [shirtCart, setShirtCart] = useState({});
   const [enrollment, setEnrollment] = useState([]);
+  const [discountCode, setDiscountCode] = useState("");
+  const [discountError, setDiscountError] = useState("");
+  const [applyingDiscount, setApplyingDiscount] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -232,6 +235,124 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
     } catch (e) {
       alert("Error: " + e.message);
     } finally { setSaving(false); }
+  };
+
+  // ── Apply discount code at payment time ──
+  const handleApplyDiscount = async () => {
+    if (!discountCode.trim()) return;
+    setApplyingDiscount(true);
+    setDiscountError("");
+    try {
+      // Look up the code
+      const codes = await sb.query("discount_codes", {
+        filters: `&code=eq.${discountCode.trim().toUpperCase()}&active=eq.true`,
+      });
+      const code = codes && codes[0];
+      if (!code) { setDiscountError("Invalid or inactive code."); return; }
+
+      // Check expiration
+      if (code.expires_at && new Date(code.expires_at) < new Date()) {
+        setDiscountError("This code has expired.");
+        return;
+      }
+      // Check max uses
+      if (code.max_uses && (code.times_used || 0) >= code.max_uses) {
+        setDiscountError("This code has reached its usage limit.");
+        return;
+      }
+
+      // Calculate discount
+      const currentBalance = ledger ? (ledger.total_due_cents - ledger.total_paid_cents) : 0;
+      if (currentBalance <= 0) { setDiscountError("No balance to apply discount to."); return; }
+
+      let discountCents = 0;
+      if (code.type === "percent") {
+        discountCents = Math.round((currentBalance * code.amount) / 100);
+      } else {
+        // flat amount — code.amount is in cents
+        discountCents = Math.min(code.amount, currentBalance);
+      }
+
+      if (discountCents <= 0) { setDiscountError("Discount results in $0 — no change."); return; }
+
+      // Update ledger: reduce total_due_cents, increase discount_amount_cents
+      await sb.query("family_ledger", {
+        method: "PATCH",
+        body: {
+          total_due_cents: ledger.total_due_cents - discountCents,
+          discount_amount_cents: (ledger.discount_amount_cents || 0) + discountCents,
+          updated_at: new Date().toISOString(),
+        },
+        filters: `&parent_id=eq.${user.id}`,
+        headers: { Prefer: "return=minimal" },
+      });
+
+      // Log it
+      await sb.query("payment_log", {
+        method: "POST",
+        body: {
+          parent_id: user.id,
+          amount_cents: discountCents,
+          method: "discount",
+          discount_code_id: code.id,
+          notes: `Code ${code.code} applied at payment`,
+        },
+        headers: { Prefer: "return=minimal" },
+      });
+
+      // Increment usage on the code
+      await sb.query("discount_codes", {
+        method: "PATCH",
+        body: { times_used: (code.times_used || 0) + 1 },
+        filters: `&id=eq.${code.id}`,
+        headers: { Prefer: "return=minimal" },
+      });
+
+      showToast(`Discount applied: -$${(discountCents / 100).toFixed(0)}`);
+      setDiscountCode("");
+      setDiscountError("");
+      load();
+    } catch (e) {
+      setDiscountError("Error applying code: " + e.message);
+    } finally {
+      setApplyingDiscount(false);
+    }
+  };
+
+  // ── Remove a pending week registration ──
+  const handleRemoveWeek = async (reg) => {
+    const week = weeks.find((w) => w.id === reg.week_id);
+    const child = children.find((c) => c.id === reg.child_id);
+    const weekLabel = week?.name || "this week";
+    const childLabel = child ? `${child.first_name}` : "this child";
+    if (!window.confirm(`Remove ${childLabel} from ${weekLabel}? This will reduce your balance by $${(reg.price_cents / 100).toFixed(0)}.`)) return;
+
+    try {
+      // Delete the registration
+      await sb.query("registrations", {
+        method: "DELETE",
+        filters: `&id=eq.${reg.id}`,
+      });
+
+      // Update ledger: subtract this week's price
+      if (ledger) {
+        const newDue = Math.max(0, ledger.total_due_cents - (reg.price_cents || 0));
+        await sb.query("family_ledger", {
+          method: "PATCH",
+          body: {
+            total_due_cents: newDue,
+            updated_at: new Date().toISOString(),
+          },
+          filters: `&parent_id=eq.${user.id}`,
+          headers: { Prefer: "return=minimal" },
+        });
+      }
+
+      showToast(`Removed ${childLabel} from ${weekLabel}.`);
+      load();
+    } catch (e) {
+      alert("Error removing week: " + e.message);
+    }
   };
 
   // Registration fee handlers
@@ -460,6 +581,27 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               )}
             </div>
 
+            {/* Discount Code at Payment */}
+            <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: colors.textMid, marginBottom: 8 }}>Have a discount code?</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <input
+                  style={{ ...s.input, width: 180, textTransform: "uppercase", fontSize: 14 }}
+                  value={discountCode}
+                  onChange={(e) => { setDiscountCode(e.target.value.toUpperCase().replace(/\s/g, "")); setDiscountError(""); }}
+                  placeholder="Enter code"
+                />
+                <button
+                  onClick={handleApplyDiscount}
+                  disabled={applyingDiscount || !discountCode.trim()}
+                  style={{ ...s.btn("secondary"), padding: "8px 16px", fontSize: 14, opacity: discountCode.trim() ? 1 : 0.5 }}
+                >
+                  {applyingDiscount ? <Spinner size={14} /> : "Apply"}
+                </button>
+              </div>
+              {discountError && <div style={{ color: colors.coral || "#e53e3e", fontSize: 12, marginTop: 6 }}>{discountError}</div>}
+            </div>
+
             {/* Pay in Full */}
             <button
               onClick={async () => {
@@ -597,9 +739,17 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                         <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                           {regs.filter((r) => r.status !== "cancelled").map((r) => {
                             const week = weekById(r.week_id);
+                            const isPending = r.status === "pending";
                             return (
-                              <span key={r.id} style={{ ...s.badge(r.status === "confirmed" ? colors.success : r.status === "pending" ? colors.amber : colors.sky), fontSize: 11 }}>
+                              <span key={r.id} style={{ ...s.badge(r.status === "confirmed" ? colors.success : r.status === "pending" ? colors.amber : colors.sky), fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}>
                                 {r.status === "confirmed" ? "✓" : "○"} {week?.name || "Week"}
+                                {isPending && (
+                                  <span
+                                    onClick={(e) => { e.stopPropagation(); handleRemoveWeek(r); }}
+                                    style={{ cursor: "pointer", marginLeft: 2, fontSize: 13, lineHeight: 1, color: "inherit", opacity: 0.7, fontWeight: 700 }}
+                                    title="Remove this week"
+                                  >✕</span>
+                                )}
                               </span>
                             );
                           })}
