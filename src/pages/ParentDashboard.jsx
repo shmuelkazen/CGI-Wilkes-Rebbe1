@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import sb from "../lib/supabase";
 import { colors, font, s } from "../lib/styles";
 import Icons from "../lib/icons";
-import { Spinner, EmptyState, StatusBadge, Modal, Field } from "../components/UI";
+import { Spinner, EmptyState, Modal, Field } from "../components/UI";
 import { AddChildModal, RegisterModal, ProfileModal } from "../components/ParentModals";
 
 // Helper: calculate age from DOB (fixed — validates date properly)
@@ -46,7 +46,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [payingFee, setPayingFee] = useState(false);
   const [shirtOrders, setShirtOrders] = useState([]);
   const [shirtCart, setShirtCart] = useState({});
-  const [enrollment, setEnrollment] = useState([]);
   const [discountCode, setDiscountCode] = useState("");
   const [discountError, setDiscountError] = useState("");
   const [applyingDiscount, setApplyingDiscount] = useState(false);
@@ -76,7 +75,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       if (c && c.length > 0) {
         const childIds = c.map((k) => k.id);
         const regs = await sb.query("registrations", {
-          filters: `&child_id=in.(${childIds.join(",")})&order=created_at.asc`,
+          filters: `&child_id=in.(${childIds.join(",")})&status=neq.cancelled&order=created_at.asc`,
         });
         setRegistrations(regs || []);
       } else {
@@ -94,12 +93,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         const shirts = await sb.query("shirt_orders", { filters: `&parent_id=eq.${user.id}&order=created_at.desc` });
         setShirtOrders(shirts || []);
       } catch { setShirtOrders([]); }
-
-      // Load enrollment counts for capacity display
-      try {
-        const enr = await sb.query("rpc/get_week_enrollment");
-        setEnrollment(enr || []);
-      } catch { setEnrollment([]); }
 
       // Check if address is missing
       if (p && (!p.address || !p.address.trim())) {
@@ -330,7 +323,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
     }
   };
 
-  // ── Remove a pending week registration ──
+  // ── Remove a week registration ──
   const handleRemoveWeek = async (reg) => {
     const week = weeks.find((w) => w.id === reg.week_id);
     const child = children.find((c) => c.id === reg.child_id);
@@ -398,7 +391,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       setFeeOverrideError("Invalid code");
       return;
     }
-    // Mark fee as paid via override
     try {
       if (ledger) {
         await sb.query("family_ledger", {
@@ -429,8 +421,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const handleOrderShirts = async () => {
     if (!shirtPriceCents || shirtPriceCents <= 0) return alert("Shirt pricing not configured yet.");
     
-    // Build list of items from cart where quantity > 0
-    const registeredChildren = children.filter((c) => registrations.some((r) => r.child_id === c.id && r.status !== "cancelled"));
+    const registeredChildren = children.filter((c) => registrations.some((r) => r.child_id === c.id));
     const items = registeredChildren.map((child) => {
       const cart = shirtCart[child.id] || { size: child.tshirt_size || "YM", quantity: 0 };
       if (!cart.quantity || cart.quantity <= 0) return null;
@@ -443,7 +434,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
     const description = items.map((i) => `${i.childName} — ${i.size} × ${i.quantity}`).join(", ");
 
     try {
-      // Create pending orders for each child
       const orderIds = [];
       for (const item of items) {
         const orderResp = await sb.query("shirt_orders", {
@@ -455,7 +445,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         if (order?.id) orderIds.push(order.id);
       }
 
-      // One Stripe checkout for the total
       const res = await fetch("/.netlify/functions/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -638,7 +627,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               {paying && paymentMode === "full" ? <Spinner size={16} /> : `Pay $${(balanceDue / 100).toFixed(0)} in Full`}
             </button>
 
-            {/* Partial Payment — always visible */}
+            {/* Partial Payment */}
             <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: colors.textMid, marginBottom: 8 }}>Or make a partial payment (min $50)</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -716,43 +705,25 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                 const regs = childRegs(child.id);
                 const age = calcAge(child.date_of_birth);
                 const div = divisionById(child.assigned_division_id);
+                const canRemoveWeeks = balanceDue > 0;
                 return (
                   <div key={child.id} style={{ ...s.card, animation: `slideIn .3s ease ${i * .05}s both`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>{child.first_name} {child.last_name}</div>
                       <div style={{ fontSize: 13, color: colors.textMid }}>
                         {age !== null ? `Age ${age}` : ""}
-                        {child.grade != null ? ` · ${child.grade === 0 ? "K" : child.grade === -1 ? "Pre-K" : child.grade < -1 ? ["","","","Pre Nursery","Toddler","Infants"][Math.abs(child.grade)] || "" : `Grade ${child.grade}`}` : ""}
+                        {child.grade != null ? ` · ${child.grade === 0 ? "K" : child.grade === -1 ? "Pre-K" : child.grade < -1 ? ["","","","Pre Nursery","Toddler"][Math.abs(child.grade)] || "" : `Grade ${child.grade}`}` : ""}
                         {div ? ` · ${div.name}` : ""}
                         {child.tshirt_size ? ` · ${child.tshirt_size}` : ""}
                       </div>
-                      {(() => {
-                        const caps = div?.class_capacities;
-                        if (!caps || child.grade == null) return null;
-                        const classNames = { "-5": "Infants", "-4": "Toddler", "-3": "Pre Nursery", "-2": "Nursery", "-1": "Pre K" };
-                        const clsName = classNames[String(child.grade)];
-                        if (!clsName || caps[clsName] == null) return null;
-                        const cap = caps[clsName];
-                        const divWeeks = weeks.filter((w) => w.division_id === div.id);
-                        const minRemaining = divWeeks.length > 0 ? Math.min(...divWeeks.map((w) => {
-                          const enrolled = enrollment.filter((e) => e.week_id === w.id && e.grade === child.grade).reduce((sum, e) => sum + (e.enrolled || 0), 0);
-                          return cap - enrolled;
-                        })) : cap;
-                        return (
-                          <div style={{ fontSize: 12, marginTop: 4, color: minRemaining <= 3 ? (colors.coral || "#e53e3e") : colors.success, fontWeight: 600 }}>
-                            {clsName} — {minRemaining <= 0 ? "class is full" : `${minRemaining} spot${minRemaining !== 1 ? "s" : ""} available`}
-                          </div>
-                        );
-                      })()}
                       {regs.length > 0 && (
                         <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                          {regs.filter((r) => r.status !== "cancelled").map((r) => {
+                          {regs.map((r) => {
                             const week = weekById(r.week_id);
-                            const isPending = r.status === "pending";
                             return (
-                              <span key={r.id} style={{ ...s.badge(r.status === "confirmed" ? colors.success : r.status === "pending" ? colors.amber : colors.sky), fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                {r.status === "confirmed" ? "✓" : "○"} {week?.name || "Week"}
-                                {isPending && (
+                              <span key={r.id} style={{ ...s.badge(colors.forest), fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                {week?.name || "Week"}
+                                {canRemoveWeeks && (
                                   <span
                                     onClick={(e) => { e.stopPropagation(); handleRemoveWeek(r); }}
                                     style={{ cursor: "pointer", marginLeft: 2, fontSize: 13, lineHeight: 1, color: "inherit", opacity: 0.7, fontWeight: 700 }}
@@ -779,8 +750,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         </div>
 
         {/* T-Shirts */}
-        {shirtOrderingOpen && children.length > 0 && registrations.some((r) => r.status !== "cancelled") && (() => {
-          const registeredChildren = children.filter((c) => registrations.some((r) => r.child_id === c.id && r.status !== "cancelled"));
+        {shirtOrderingOpen && children.length > 0 && registrations.length > 0 && (() => {
+          const registeredChildren = children.filter((c) => registrations.some((r) => r.child_id === c.id));
           const cartTotal = registeredChildren.reduce((sum, child) => {
             const cart = shirtCart[child.id] || { size: child.tshirt_size || "YM", quantity: 0 };
             return sum + (shirtPriceCents * (cart.quantity || 0));
@@ -868,7 +839,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               onChange={async (e) => {
                 const checked = e.target.checked;
                 if (checked) {
-                  // Show acknowledgment first
                   if (!window.confirm("By checking this box, you acknowledge that if ELRC funds do not come through for any reason, you are responsible for paying the full camp rate.\n\nDo you understand and agree?")) return;
                 }
                 try {
@@ -914,24 +884,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                           `${w.name} (${fmtDate(w.start_date)})`
                         ).join(", ")}
                       </div>
-                      {div.class_capacities && (
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                          {Object.entries(div.class_capacities).map(([cls, cap]) => {
-                            const gradeVal = { "Infants": -5, "Toddler": -4, "Pre Nursery": -3, "Nursery": -2, "Pre K": -1 }[cls];
-                            const divWks = weeks.filter((w) => w.division_id === div.id);
-                            const totalSlots = cap * divWks.length;
-                            const totalEnrolled = divWks.reduce((sum, w) => {
-                              return sum + enrollment.filter((e) => e.week_id === w.id && e.division_id === div.id && e.grade === gradeVal).reduce((s2, e) => s2 + (e.enrolled || 0), 0);
-                            }, 0);
-                            const avgRemaining = divWks.length > 0 ? Math.round((totalSlots - totalEnrolled) / divWks.length) : cap;
-                            return (
-                              <span key={cls} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: avgRemaining <= 3 ? (colors.amberLight || "#fef3c7") : (colors.forestPale || "#f0fdf4"), color: avgRemaining <= 0 ? (colors.coral || "#e53e3e") : avgRemaining <= 3 ? (colors.amber || "#d97706") : colors.success }}>
-                                {cls}: {avgRemaining <= 0 ? "full" : `${avgRemaining} spots`}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
                       {div.early_bird_discount_cents > 0 && settings?.early_bird_deadline && (
                         <div style={{ fontSize: 12, color: colors.success, marginTop: 4 }}>
                           Early bird: ${((displayPrice - div.early_bird_discount_cents) / 100).toFixed(0)}/week if paid by {fmtDate(settings.early_bird_deadline, { month: "short", day: "numeric" })}

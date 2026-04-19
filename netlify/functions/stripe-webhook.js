@@ -71,7 +71,6 @@ function getAllRecipients(parentInfo, fallbackEmail) {
   // Additional emails from parents.additional_emails (jsonb array)
   if (Array.isArray(parentInfo.additionalEmails)) {
     for (const entry of parentInfo.additionalEmails) {
-      // Could be array of strings or array of objects with .email
       const addr = typeof entry === "string" ? entry : entry?.email;
       if (addr) recipients.add(addr);
     }
@@ -90,7 +89,6 @@ async function ensureLedgerExists(parentId) {
     return ledgers[0];
   }
 
-  // No row — create one
   console.log(`Creating family_ledger row for parent ${parentId}`);
   await supabaseQuery("family_ledger", {
     method: "POST",
@@ -105,7 +103,6 @@ async function ensureLedgerExists(parentId) {
     headers: { Prefer: "return=minimal" },
   });
 
-  // Fetch the newly created row
   const newLedgers = await supabaseQuery("family_ledger", {
     filters: `&parent_id=eq.${parentId}`,
   });
@@ -147,7 +144,6 @@ exports.handler = async (event) => {
 
         // ── Registration Fee ───────────────────────────────
         if (isRegistrationFee) {
-          // Log payment
           await supabaseQuery("payment_log", {
             method: "POST",
             body: {
@@ -160,7 +156,6 @@ exports.handler = async (event) => {
             headers: { Prefer: "return=minimal" },
           });
 
-          // Ensure ledger exists, then mark fee as paid
           await ensureLedgerExists(parentId);
           await supabaseQuery("family_ledger", {
             method: "PATCH",
@@ -174,7 +169,6 @@ exports.handler = async (event) => {
 
           console.log(`Registration fee paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
 
-          // Send receipt email
           if (recipientEmails.length > 0) {
             const emailContent = registrationFeeReceiptEmail({
               parentName: parentInfo.name,
@@ -191,7 +185,6 @@ exports.handler = async (event) => {
 
         // ── T-Shirt Order ──────────────────────────────────
         if (isShirtOrder) {
-          // Log payment
           await supabaseQuery("payment_log", {
             method: "POST",
             body: {
@@ -204,7 +197,6 @@ exports.handler = async (event) => {
             headers: { Prefer: "return=minimal" },
           });
 
-          // Mark shirt order as paid
           if (shirtOrderId) {
             await supabaseQuery("shirt_orders", {
               method: "PATCH",
@@ -220,7 +212,6 @@ exports.handler = async (event) => {
 
           console.log(`Shirt order paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
 
-          // Send receipt email
           if (recipientEmails.length > 0) {
             const emailContent = shirtOrderReceiptEmail({
               parentName: parentInfo.name,
@@ -251,7 +242,7 @@ exports.handler = async (event) => {
           headers: { Prefer: "return=minimal" },
         });
 
-        // 2. Ensure ledger exists, then update
+        // 2. Ensure ledger exists, then update paid amount
         const ledger = await ensureLedgerExists(parentId);
         const totalPaidCents = (ledger?.total_paid_cents || 0) + amountCents;
         const totalDueCents = ledger?.total_due_cents || 0;
@@ -266,27 +257,14 @@ exports.handler = async (event) => {
           headers: { Prefer: "return=minimal" },
         });
 
-        // 3. Confirm pending registrations
+        console.log(`Payment completed for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
+
+        // 3. Send payment receipt email
         const children = await supabaseQuery("children", {
           filters: `&parent_id=eq.${parentId}`,
           select: "id,first_name,last_name",
         });
-        if (children && children.length > 0) {
-          const childIds = children.map((c) => c.id);
-          await supabaseQuery("registrations", {
-            method: "PATCH",
-            body: {
-              status: "confirmed",
-              updated_at: new Date().toISOString(),
-            },
-            filters: `&child_id=in.(${childIds.join(",")})&status=eq.pending`,
-            headers: { Prefer: "return=minimal" },
-          });
-        }
 
-        console.log(`Payment completed for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
-
-        // Send payment receipt email
         if (recipientEmails.length > 0) {
           const emailContent = paymentReceiptEmail({
             parentName: parentInfo.name,

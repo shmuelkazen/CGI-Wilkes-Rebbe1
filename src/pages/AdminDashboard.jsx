@@ -14,7 +14,6 @@ function fmtDate(dateStr, opts) {
 }
 
 const PRESCHOOL_CLASSES = [
-  { value: "-5", label: "Infants" },
   { value: "-4", label: "Toddler" },
   { value: "-3", label: "Pre Nursery" },
   { value: "-2", label: "Nursery" },
@@ -709,7 +708,31 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const weekMap = Object.fromEntries((weeks || []).map((w) => [w.id, w]));
   const ledgerMap = Object.fromEntries((ledgers || []).map((l) => [l.parent_id, l]));
 
-  const updateRegistration = async (regId, updates) => { try { await sb.query("registrations", { method: "PATCH", body: updates, filters: `&id=eq.${regId}`, headers: { Prefer: "return=minimal" } }); showToast("Updated!"); load(); } catch (e) { alert("Error: " + e.message); } };
+  const deleteRegistration = async (reg) => {
+    const child = childMap[reg.child_id];
+    const wk = weekMap[reg.week_id];
+    const label = `${child?.first_name || "?"} — ${wk?.name || "?"}`;
+    if (!window.confirm(`Remove registration: ${label}? This will delete the row and adjust the family balance.`)) return;
+    try {
+      await sb.query("registrations", { method: "DELETE", filters: `&id=eq.${reg.id}` });
+      // Adjust family ledger
+      const parentId = child?.parent_id;
+      if (parentId) {
+        const ledger = ledgerMap[parentId];
+        if (ledger) {
+          const newDue = Math.max(0, (Number(ledger.total_due_cents) || 0) - (Number(reg.price_cents) || 0));
+          await sb.query("family_ledger", {
+            method: "PATCH",
+            body: { total_due_cents: newDue, updated_at: new Date().toISOString() },
+            filters: `&parent_id=eq.${parentId}`,
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+      }
+      showToast(`Removed: ${label}. Ledger adjusted.`);
+      load();
+    } catch (e) { alert("Error: " + e.message); }
+  };
 
   const handleSaveDivision = async (data) => { setSaving(true); try { if (divisionModal && divisionModal !== "create") { await sb.query("divisions", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${divisionModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Division updated!"); } else { await sb.query("divisions", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Division created!"); } setDivisionModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
   const handleDeleteDivision = async (div) => { const weekCount = weeks.filter((w) => w.division_id === div.id).length; if (!window.confirm(`Delete "${div.name}"${weekCount ? ` and its ${weekCount} weeks` : ""}? This cannot be undone.`)) return; try { await sb.query("divisions", { method: "DELETE", filters: `&id=eq.${div.id}` }); showToast("Division deleted."); load(); } catch (e) { alert("Error: " + e.message); } };
@@ -788,7 +811,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                     <td style={{ padding: "10px 14px" }}><StatusBadge status={r.status} /></td>
                     <td style={{ padding: "10px 14px", fontSize: 13 }}>${(r.price_cents / 100).toFixed(0)}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, color: colors.textMid }}>{new Date(r.created_at).toLocaleDateString()}</td>
-                    <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{r.status === "pending" && <button onClick={() => updateRegistration(r.id, { status: "confirmed" })} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Confirm</button>}{r.status !== "cancelled" && <button onClick={() => { if (window.confirm("Cancel this registration?")) updateRegistration(r.id, { status: "cancelled" }); }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.x({ size: 13, color: colors.coral })}</button>}</div></td>
+                    <td style={{ padding: "10px 14px" }}><button onClick={() => deleteRegistration(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.x({ size: 13, color: colors.coral })} Remove</button></td>
                   </tr>); })}</tbody>
               </table>
             )}

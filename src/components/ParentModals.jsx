@@ -17,7 +17,6 @@ function fmtDate(dateStr, opts) {
 
 // Grade/class options by division type
 const PRESCHOOL_CLASSES = [
-  { value: "-5", label: "Infants" },
   { value: "-4", label: "Toddler" },
   { value: "-3", label: "Pre Nursery" },
   { value: "-2", label: "Nursery" },
