@@ -705,7 +705,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                 const regs = childRegs(child.id);
                 const age = calcAge(child.date_of_birth);
                 const div = divisionById(child.assigned_division_id);
-                const canRemoveWeeks = balanceDue > 0;
+                const canRemoveWeeks = true;
                 return (
                   <div key={child.id} style={{ ...s.card, animation: `slideIn .3s ease ${i * .05}s both`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
                     <div>
