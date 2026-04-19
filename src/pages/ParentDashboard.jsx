@@ -243,136 +243,92 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
     setApplyingDiscount(true);
     setDiscountError("");
     try {
-      // Look up the code
       const codes = await sb.query("discount_codes", {
         filters: `&code=eq.${discountCode.trim().toUpperCase()}&active=eq.true`,
       });
       const code = codes && codes[0];
       if (!code) { setDiscountError("Invalid or inactive code."); return; }
 
-      // Check expiration
       if (code.expires_at && new Date(code.expires_at) < new Date()) {
         setDiscountError("This code has expired.");
         return;
       }
-      // Check max uses
       if (code.max_uses && (code.times_used || 0) >= code.max_uses) {
         setDiscountError("This code has reached its usage limit.");
         return;
       }
 
-      // Calculate discount
-      const currentBalance = ledger ? ((ledger.total_due_cents || 0) - (ledger.total_paid_cents || 0)) : 0;
+      const totalDue = Number(ledger?.total_due_cents) || 0;
+      const totalPaid = Number(ledger?.total_paid_cents) || 0;
+      const existingDiscounts = Number(ledger?.discount_amount_cents) || 0;
+      const currentBalance = totalDue - totalPaid;
       if (currentBalance <= 0) { setDiscountError("No balance to apply discount to."); return; }
 
       let discountCents = 0;
       if (code.type === "percent") {
-        discountCents = Math.round((currentBalance * code.amount) / 100);
+        discountCents = Math.round((currentBalance * (Number(code.amount) || 0)) / 100);
       } else {
-        // flat amount — code.amount is in cents
-        discountCents = Math.min(code.amount, currentBalance);
+        discountCents = Math.min(Number(code.amount) || 0, currentBalance);
       }
 
       if (discountCents <= 0) { setDiscountError("Discount results in $0 — no change."); return; }
 
-      const handleApplyDiscount = async () => {
-        if (!discountCode.trim()) return;
-        setApplyingDiscount(true);
-        setDiscountError("");
-        try {
-          // Look up the code
-          const codes = await sb.query("discount_codes", {
-            filters: `&code=eq.${discountCode.trim().toUpperCase()}&active=eq.true`,
-          });
-          const code = codes && codes[0];
-          if (!code) { setDiscountError("Invalid or inactive code."); return; }
-    
-          // Check expiration
-          if (code.expires_at && new Date(code.expires_at) < new Date()) {
-            setDiscountError("This code has expired.");
-            return;
-          }
-          // Check max uses
-          if (code.max_uses && (code.times_used || 0) >= code.max_uses) {
-            setDiscountError("This code has reached its usage limit.");
-            return;
-          }
-    
-          // Calculate discount
-          const totalDue = Number(ledger?.total_due_cents) || 0;
-          const totalPaid = Number(ledger?.total_paid_cents) || 0;
-          const existingDiscounts = Number(ledger?.discount_amount_cents) || 0;
-          const currentBalance = totalDue - totalPaid;
-          if (currentBalance <= 0) { setDiscountError("No balance to apply discount to."); return; }
-    
-          let discountCents = 0;
-          if (code.type === "percent") {
-            discountCents = Math.round((currentBalance * (Number(code.amount) || 0)) / 100);
-          } else {
-            discountCents = Math.min(Number(code.amount) || 0, currentBalance);
-          }
-    
-          if (discountCents <= 0) { setDiscountError("Discount results in $0 — no change."); return; }
-    
-          const newTotalDue = totalDue - discountCents;
-          const newDiscounts = existingDiscounts + discountCents;
-    
-          // Update ledger
-          if (ledger) {
-            await sb.query("family_ledger", {
-              method: "PATCH",
-              body: {
-                total_due_cents: newTotalDue,
-                discount_amount_cents: newDiscounts,
-                updated_at: new Date().toISOString(),
-              },
-              filters: `&parent_id=eq.${user.id}`,
-              headers: { Prefer: "return=minimal" },
-            });
-          } else {
-            await sb.query("family_ledger", {
-              method: "POST",
-              body: {
-                parent_id: user.id,
-                total_due_cents: 0,
-                total_paid_cents: 0,
-                discount_amount_cents: discountCents,
-              },
-              headers: { Prefer: "return=minimal" },
-            });
-          }
-    
-          // Log it
-          await sb.query("payment_log", {
-            method: "POST",
-            body: {
-              parent_id: user.id,
-              amount_cents: discountCents,
-              method: "discount",
-              discount_code_id: code.id,
-              notes: `Code ${code.code} applied at payment`,
-            },
-            headers: { Prefer: "return=minimal" },
-          });
-    
-          // Increment usage on the code
-          await sb.query("discount_codes", {
-            method: "PATCH",
-            body: { times_used: (code.times_used || 0) + 1 },
-            filters: `&id=eq.${code.id}`,
-            headers: { Prefer: "return=minimal" },
-          });
-    
-          showToast(`Discount applied: -$${(discountCents / 100).toFixed(0)}`);
-          setDiscountCode("");
-          setDiscountError("");
-          load();
-        } catch (e) {
-          setDiscountError("Error applying code: " + e.message);
-        } finally {
-          setApplyingDiscount(false);
-        }
-      };
+      const newTotalDue = totalDue - discountCents;
+      const newDiscounts = existingDiscounts + discountCents;
+
+      if (ledger) {
+        await sb.query("family_ledger", {
+          method: "PATCH",
+          body: {
+            total_due_cents: newTotalDue,
+            discount_amount_cents: newDiscounts,
+            updated_at: new Date().toISOString(),
+          },
+          filters: `&parent_id=eq.${user.id}`,
+          headers: { Prefer: "return=minimal" },
+        });
+      } else {
+        await sb.query("family_ledger", {
+          method: "POST",
+          body: {
+            parent_id: user.id,
+            total_due_cents: 0,
+            total_paid_cents: 0,
+            discount_amount_cents: discountCents,
+          },
+          headers: { Prefer: "return=minimal" },
+        });
+      }
+
+      await sb.query("payment_log", {
+        method: "POST",
+        body: {
+          parent_id: user.id,
+          amount_cents: discountCents,
+          method: "discount",
+          discount_code_id: code.id,
+          notes: `Code ${code.code} applied at payment`,
+        },
+        headers: { Prefer: "return=minimal" },
+      });
+
+      await sb.query("discount_codes", {
+        method: "PATCH",
+        body: { times_used: (code.times_used || 0) + 1 },
+        filters: `&id=eq.${code.id}`,
+        headers: { Prefer: "return=minimal" },
+      });
+
+      showToast(`Discount applied: -$${(discountCents / 100).toFixed(0)}`);
+      setDiscountCode("");
+      setDiscountError("");
+      load();
+    } catch (e) {
+      setDiscountError("Error applying code: " + e.message);
+    } finally {
+      setApplyingDiscount(false);
+    }
+  };
 
   // ── Remove a pending week registration ──
   const handleRemoveWeek = async (reg) => {
@@ -383,15 +339,13 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
     if (!window.confirm(`Remove ${childLabel} from ${weekLabel}? This will reduce your balance by $${(reg.price_cents / 100).toFixed(0)}.`)) return;
 
     try {
-      // Delete the registration
       await sb.query("registrations", {
         method: "DELETE",
         filters: `&id=eq.${reg.id}`,
       });
 
-      // Update ledger: subtract this week's price
       if (ledger) {
-        const newDue = Math.max(0, ledger.total_due_cents - (reg.price_cents || 0));
+        const newDue = Math.max(0, (Number(ledger.total_due_cents) || 0) - (Number(reg.price_cents) || 0));
         await sb.query("family_ledger", {
           method: "PATCH",
           body: {
