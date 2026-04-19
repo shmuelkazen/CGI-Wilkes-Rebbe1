@@ -574,10 +574,41 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               <div style={{ fontFamily: font.display, fontSize: 24, color: colors.forest }}>${(balanceDue / 100).toFixed(0)}</div>
             </div>
             <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
-                <span style={{ color: colors.textMid }}>Total charges</span>
-                <span style={{ fontWeight: 600 }}>${(ledger.total_due_cents / 100).toFixed(2)}</span>
+              {/* Per-child breakdown */}
+              {children.filter((c) => registrations.some((r) => r.child_id === c.id)).map((child) => {
+                const regs = registrations.filter((r) => r.child_id === child.id);
+                const childTotal = regs.reduce((sum, r) => sum + (Number(r.price_cents) || 0), 0);
+                const divIds = [...new Set(regs.map((r) => r.division_id))];
+                const divLabel = divIds.map((id) => divisions.find((d) => d.id === id)?.name).filter(Boolean).join(", ");
+                return (
+                  <div key={child.id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0" }}>
+                      <span>{child.first_name} {child.last_name}{divLabel ? ` — ${divLabel}` : ""}</span>
+                      <span>${(childTotal / 100).toFixed(2)}</span>
+                    </div>
+                    {regs.map((r) => {
+                      const wk = weeks.find((w) => w.id === r.week_id);
+                      return (
+                        <div key={r.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: colors.textLight, padding: "1px 0 1px 12px" }}>
+                          <span>{wk?.name || "Week"}</span>
+                          <span>${((Number(r.price_cents) || 0) / 100).toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {/* Total line */}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0 0", borderTop: `1px solid ${colors.border}` }}>
+                <span style={{ color: colors.textMid, fontWeight: 600 }}>Total charges</span>
+                <span style={{ fontWeight: 700 }}>${(ledger.total_due_cents / 100).toFixed(2)}</span>
               </div>
+              {ledger.discount_amount_cents > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
+                  <span style={{ color: colors.success }}>Discounts</span>
+                  <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.discount_amount_cents / 100).toFixed(2)}</span>
+                </div>
+              )}
               {ledger.total_paid_cents > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
                   <span style={{ color: colors.textMid }}>Paid</span>
