@@ -262,7 +262,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       }
 
       // Calculate discount
-      const currentBalance = ledger ? (ledger.total_due_cents - ledger.total_paid_cents) : 0;
+      const currentBalance = ledger ? ((ledger.total_due_cents || 0) - (ledger.total_paid_cents || 0)) : 0;
       if (currentBalance <= 0) { setDiscountError("No balance to apply discount to."); return; }
 
       let discountCents = 0;
