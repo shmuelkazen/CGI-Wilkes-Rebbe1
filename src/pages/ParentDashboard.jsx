@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import sb from "../lib/supabase";
+import { calculateBalance } from "../lib/calculateBalance";
 import { colors, font, s } from "../lib/styles";
 import Icons from "../lib/icons";
 import { Spinner, EmptyState, Modal, Field } from "../components/UI";
@@ -49,6 +50,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [discountCode, setDiscountCode] = useState("");
   const [discountError, setDiscountError] = useState("");
   const [applyingDiscount, setApplyingDiscount] = useState(false);
+  const [balanceCalc, setBalanceCalc] = useState(null);
+  const [discountCredits, setDiscountCredits] = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -71,22 +74,55 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       });
       setSettings(st);
 
-      // Load registrations for all children
-      if (c && c.length > 0) {
-        const childIds = c.map((k) => k.id);
-        const regs = await sb.query("registrations", {
-          filters: `&child_id=in.(${childIds.join(",")})&status=neq.cancelled&order=created_at.asc`,
-        });
-        setRegistrations(regs || []);
-      } else {
-        setRegistrations([]);
-      }
+      // Recalculate balance on the fly
+      const regs = (c && c.length > 0)
+        ? (await sb.query("registrations", {
+            filters: `&child_id=in.(${(c || []).map((k) => k.id).join(",")})&status=neq.cancelled&order=created_at.asc`,
+          }) || [])
+        : [];
+      setRegistrations(regs);
 
-      // Load family ledger
+      const calc = calculateBalance({
+        children: c || [],
+        registrations: regs,
+        divisions: divs || [],
+        weeks: wks || [],
+        parent: p,
+        settings: st,
+      });
+      setBalanceCalc(calc);
+
+      // Load discount code credits from payment_log
+      let credits = [];
+      try {
+        credits = await sb.query("payment_log", {
+          filters: `&parent_id=eq.${user.id}&method=eq.discount&order=created_at.asc`,
+        }) || [];
+      } catch { credits = []; }
+      setDiscountCredits(credits);
+
+      // Sync ledger with recalculated totals
+      const totalCodeCredits = credits.reduce((sum, d) => sum + (Number(d.amount_cents) || 0), 0);
+      const newTotalDue = Math.max(0, calc.totalDue - totalCodeCredits);
       try {
         const led = await sb.query("family_ledger", { filters: `&parent_id=eq.${user.id}`, single: true });
-        setLedger(led);
-      } catch { setLedger(null); }
+        if (led && led.total_due_cents !== newTotalDue) {
+          await sb.query("family_ledger", {
+            method: "PATCH",
+            body: {
+              total_due_cents: newTotalDue,
+              discount_amount_cents: calc.discounts.total + totalCodeCredits,
+              updated_at: new Date().toISOString(),
+            },
+            filters: `&parent_id=eq.${user.id}`,
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+        const freshLedger = await sb.query("family_ledger", { filters: `&parent_id=eq.${user.id}`, single: true });
+        setLedger(freshLedger);
+      } catch (e) {
+        console.warn("Ledger sync:", e.message);
+      }
 
       // Load shirt orders
       try {
@@ -94,7 +130,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         setShirtOrders(shirts || []);
       } catch { setShirtOrders([]); }
 
-      // Check if address is missing
+      // Check if address or phone is missing
       if (p && (!p.address || !p.address.trim() || !p.phone || !p.phone.trim())) {
         setNeedsAddress(true);
         setAddressForm({ address: p.address || "", phone: p.phone || "" });
@@ -574,47 +610,59 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               <div style={{ fontFamily: font.display, fontSize: 24, color: colors.forest }}>${(balanceDue / 100).toFixed(0)}</div>
             </div>
             <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
-              {/* Per-child breakdown */}
-              {children.filter((c) => registrations.some((r) => r.child_id === c.id)).map((child) => {
-                const regs = registrations.filter((r) => r.child_id === child.id);
-                const childTotal = regs.reduce((sum, r) => sum + (Number(r.price_cents) || 0), 0);
-                const divIds = [...new Set(regs.map((r) => r.division_id))];
-                const divLabel = divIds.map((id) => divisions.find((d) => d.id === id)?.name).filter(Boolean).join(", ");
-                return (
-                  <div key={child.id} style={{ marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0" }}>
-                      <span>{child.first_name} {child.last_name}{divLabel ? ` — ${divLabel}` : ""}</span>
-                      <span>${(childTotal / 100).toFixed(2)}</span>
-                    </div>
-                    {regs.map((r) => {
-                      const wk = weeks.find((w) => w.id === r.week_id);
-                      return (
-                        <div key={r.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: colors.textLight, padding: "1px 0 1px 12px" }}>
-                          <span>{wk?.name || "Week"}</span>
-                          <span>${((Number(r.price_cents) || 0) / 100).toFixed(2)}</span>
-                        </div>
-                      );
-                    })}
+              {/* Per-child breakdown from recalculation */}
+              {balanceCalc && balanceCalc.children.map((cb) => (
+                <div key={cb.childId} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0" }}>
+                    <span>{cb.childName} — {cb.division}{cb.isElrc ? " (ELRC)" : ""}</span>
+                    <span>${(cb.subtotal / 100).toFixed(2)}</span>
                   </div>
-                );
-              })}
-              {/* Total line */}
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0 0", borderTop: `1px solid ${colors.border}` }}>
-                <span style={{ color: colors.textMid, fontWeight: 600 }}>Total charges</span>
-                <span style={{ fontWeight: 700 }}>${(ledger.total_due_cents / 100).toFixed(2)}</span>
+                  {cb.weeks.map((w) => (
+                    <div key={w.registrationId} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: colors.textLight, padding: "1px 0 1px 12px" }}>
+                      <span>{w.weekName}{w.isPartial ? " (partial)" : ""}</span>
+                      <span>${(w.total / 100).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {/* Totals */}
+              <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 6 }}>
+                {balanceCalc && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
+                    <span style={{ color: colors.textMid }}>Subtotal</span>
+                    <span style={{ fontWeight: 600 }}>${(balanceCalc.totalCharges / 100).toFixed(2)}</span>
+                  </div>
+                )}
+                {balanceCalc && balanceCalc.discounts.sibling > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0" }}>
+                    <span style={{ color: colors.success }}>Sibling discount</span>
+                    <span style={{ fontWeight: 600, color: colors.success }}>-${(balanceCalc.discounts.sibling / 100).toFixed(2)}</span>
+                  </div>
+                )}
+                {balanceCalc && balanceCalc.discounts.earlyBird > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0" }}>
+                    <span style={{ color: colors.success }}>Early bird discount</span>
+                    <span style={{ fontWeight: 600, color: colors.success }}>-${(balanceCalc.discounts.earlyBird / 100).toFixed(2)}</span>
+                  </div>
+                )}
+                {discountCredits.length > 0 && discountCredits.map((dc, i) => (
+                  <div key={dc.id || i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0" }}>
+                    <span style={{ color: colors.success }}>{dc.notes || "Discount code"}</span>
+                    <span style={{ fontWeight: 600, color: colors.success }}>-${((Number(dc.amount_cents) || 0) / 100).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0 0", borderTop: `1px solid ${colors.border}`, marginTop: 4 }}>
+                  <span style={{ color: colors.textMid, fontWeight: 600 }}>Total due</span>
+                  <span style={{ fontWeight: 700 }}>${(ledger.total_due_cents / 100).toFixed(2)}</span>
+                </div>
+                {ledger.total_paid_cents > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
+                    <span style={{ color: colors.textMid }}>Paid</span>
+                    <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.total_paid_cents / 100).toFixed(2)}</span>
+                  </div>
+                )}
               </div>
-              {ledger.discount_amount_cents > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
-                  <span style={{ color: colors.success }}>Discounts</span>
-                  <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.discount_amount_cents / 100).toFixed(2)}</span>
-                </div>
-              )}
-              {ledger.total_paid_cents > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
-                  <span style={{ color: colors.textMid }}>Paid</span>
-                  <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.total_paid_cents / 100).toFixed(2)}</span>
-                </div>
-              )}
             </div>
 
             {/* Discount Code at Payment */}

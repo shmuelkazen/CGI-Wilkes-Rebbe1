@@ -1,4 +1,5 @@
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const { calculateBalance } = require("./utils/calculateBalance");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -96,7 +97,6 @@ exports.handler = async (event) => {
 
     // ── Regular Camp Payment ──
     const children = await supabaseQuery("children", { filters: `&parent_id=eq.${parentId}` });
-    const childNames = (children || []).map((c) => `${c.first_name} ${c.last_name}`).join(", ");
 
     const childIds = (children || []).map((c) => c.id);
     let registrations = [];
@@ -106,41 +106,58 @@ exports.handler = async (event) => {
       }) || [];
     }
 
+    if (registrations.length === 0) {
+      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "No active registrations found." }) };
+    }
+
     const divisionIds = [...new Set(registrations.map((r) => r.division_id).filter(Boolean))];
     const weekIds = [...new Set(registrations.map((r) => r.week_id).filter(Boolean))];
     let divisions = [];
     let weeks = [];
     if (divisionIds.length > 0) divisions = await supabaseQuery("divisions", { filters: `&id=in.(${divisionIds.join(",")})` }) || [];
     if (weekIds.length > 0) weeks = await supabaseQuery("division_weeks", { filters: `&id=in.(${weekIds.join(",")})` }) || [];
-    const divMap = Object.fromEntries(divisions.map((d) => [d.id, d]));
-    const weekMap = Object.fromEntries(weeks.map((w) => [w.id, w]));
-    const childMap = Object.fromEntries((children || []).map((c) => [c.id, c]));
 
-    // Group registrations by child
-    const regsByChild = {};
-    for (const r of registrations) {
-      if (!regsByChild[r.child_id]) regsByChild[r.child_id] = [];
-      regsByChild[r.child_id].push(r);
+    // Load settings
+    const settingsRows = await supabaseQuery("camp_settings") || [];
+    const settings = {};
+    settingsRows.forEach((row) => {
+      try { settings[row.key] = JSON.parse(row.value); } catch { settings[row.key] = row.value; }
+    });
+
+    // Server-side recalculation — single source of truth
+    const calc = calculateBalance({
+      children: children || [],
+      registrations,
+      divisions,
+      weeks,
+      parent,
+      settings,
+    });
+
+    // Get code discount credits and payments from ledger
+    const discountLogs = await supabaseQuery("payment_log", {
+      filters: `&parent_id=eq.${parentId}&method=eq.discount`,
+    }) || [];
+    const totalCodeCredits = discountLogs.reduce((sum, d) => sum + (Number(d.amount_cents) || 0), 0);
+
+    const ledger = await supabaseQuery("family_ledger", { filters: `&parent_id=eq.${parentId}` });
+    const totalPaid = (ledger && ledger[0]?.total_paid_cents) || 0;
+
+    const serverBalance = Math.max(0, calc.totalDue - totalCodeCredits - totalPaid);
+
+    // Validate requested amount against server-calculated balance
+    if (amountCents > serverBalance) {
+      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: `Amount exceeds balance. Server balance: $${(serverBalance / 100).toFixed(2)}` }) };
     }
 
-    // Build one line item per camper
-    const totalRegs = registrations.length;
-    const perRegCents = Math.floor(amountCents / totalRegs);
+    // Build clean line items from recalculation
+    const divMap = Object.fromEntries(divisions.map((d) => [d.id, d]));
+    const weekMap = Object.fromEntries(weeks.map((w) => [w.id, w]));
     let centsAssigned = 0;
-    const childEntries = Object.entries(regsByChild);
 
-    const line_items = childEntries.map(([childId, regs], idx) => {
-      const child = childMap[childId];
-      const childName = child ? `${child.first_name} ${child.last_name}` : "Camper";
-      const divNames = [...new Set(regs.map((r) => divMap[r.division_id]?.name).filter(Boolean))];
-      const weekNames = regs
-        .map((r) => weekMap[r.week_id]?.name)
-        .filter(Boolean)
-        .sort();
-
-      // Format week range (e.g. "Weeks 1–8") or list
-      const weekNums = weekNames.map((w) => {
-        const m = w.match(/(\d+)/);
+    const line_items = calc.children.map((cb, idx) => {
+      const weekNums = cb.weeks.map((w) => {
+        const m = w.weekName.match(/(\d+)/);
         return m ? parseInt(m[1]) : null;
       }).filter(Boolean).sort((a, b) => a - b);
 
@@ -148,22 +165,22 @@ exports.handler = async (event) => {
       if (weekNums.length > 1 && weekNums[weekNums.length - 1] - weekNums[0] === weekNums.length - 1) {
         weekLabel = `Weeks ${weekNums[0]}–${weekNums[weekNums.length - 1]}`;
       } else {
-        weekLabel = weekNums.length > 0 ? `Weeks ${weekNums.join(", ")}` : `${regs.length} week(s)`;
+        weekLabel = weekNums.length > 0 ? `Weeks ${weekNums.join(", ")}` : `${cb.weeks.length} week(s)`;
       }
 
-      // Distribute cents proportionally by number of registrations
-      // Last child gets the remainder to ensure total is exact
-      const isLast = idx === childEntries.length - 1;
+      // Proportional split of the requested payment amount
+      const isLast = idx === calc.children.length - 1;
+      const childShare = serverBalance > 0 ? cb.subtotal / calc.totalDue : 1 / calc.children.length;
       const childCents = isLast
         ? amountCents - centsAssigned
-        : perRegCents * regs.length;
+        : Math.round(amountCents * childShare);
       centsAssigned += childCents;
 
       return {
         price_data: {
           currency: "usd",
           product_data: {
-            name: `${childName} — ${divNames.join(", ") || "Camp"}`,
+            name: `${cb.childName} — ${cb.division || "Camp"}`,
             description: weekLabel,
           },
           unit_amount: childCents,
