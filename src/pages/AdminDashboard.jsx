@@ -976,7 +976,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                 <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}>{o.status === "paid" && (<button onClick={async () => { try { await sb.query("shirt_orders", { method: "PATCH", body: { status: "fulfilled", updated_at: new Date().toISOString() }, filters: `&id=eq.${o.id}`, headers: { Prefer: "return=minimal" } }); showToast("Marked as fulfilled!"); load(); } catch (e) { alert("Error: " + e.message); } }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Fulfilled</button>)}{o.status === "pending" && (<button onClick={async () => { if (!window.confirm("Delete this unpaid order?")) return; try { await sb.query("shirt_orders", { method: "DELETE", filters: `&id=eq.${o.id}` }); showToast("Order deleted."); load(); } catch (e) { alert("Error: " + e.message); } }} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.trash({ size: 13, color: colors.coral })}</button>)}</div></td>
               </tr>); })}</tbody></table></div>
           )}
-        </div>)}
+        </div>)}  
       </div>
 
       {/* Modals */}
