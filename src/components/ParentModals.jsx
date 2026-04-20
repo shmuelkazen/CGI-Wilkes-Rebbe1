@@ -453,6 +453,20 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
     return Math.max(floor, price - discount);
   };
 
+  // ─── Capacity check (preschool class-level) ───
+  const classCapacities = division?.class_capacities || null;
+  const childClassName = gradeToClassName(child.grade);
+
+  const getWeekClassEnrollment = (weekId) => {
+    if (!classCapacities || !childClassName) return null;
+    const cap = classCapacities[childClassName];
+    if (cap == null) return null;
+    const enrolled = enrollment.filter(
+      (e) => e.week_id === weekId && e.division_id === division.id && e.grade === child.grade
+    ).reduce((sum, e) => sum + (e.enrolled || 0), 0);
+    return { enrolled, capacity: cap, remaining: cap - enrolled };
+  };
+
   // ─── Totals (split confirmed vs waitlisted) ───
   const selectedWeeks = [...selected].map((wid) => divisionWeeks.find((w) => w.id === wid)).filter(Boolean);
 
@@ -515,20 +529,6 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
       }
     } catch { setDiscountError("Error checking code"); }
     setCheckingCode(false);
-  };
-
-  // ─── Capacity check (preschool class-level) ───
-  const classCapacities = division?.class_capacities || null;
-  const childClassName = gradeToClassName(child.grade);
-
-  const getWeekClassEnrollment = (weekId) => {
-    if (!classCapacities || !childClassName) return null;
-    const cap = classCapacities[childClassName];
-    if (cap == null) return null;
-    const enrolled = enrollment.filter(
-      (e) => e.week_id === weekId && e.division_id === division.id && e.grade === child.grade
-    ).reduce((sum, e) => sum + (e.enrolled || 0), 0);
-    return { enrolled, capacity: cap, remaining: cap - enrolled };
   };
 
   // No division assigned
