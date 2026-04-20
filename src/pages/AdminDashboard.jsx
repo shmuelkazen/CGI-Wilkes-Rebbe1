@@ -783,32 +783,59 @@ export default function AdminDashboard({ user, setView, showToast }) {
 
   const handleSaveDivision = async (data) => { setSaving(true); try { if (divisionModal && divisionModal !== "create") { await sb.query("divisions", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${divisionModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Division updated!"); } else { await sb.query("divisions", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Division created!"); } setDivisionModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
 
-  // ── Approve a waitlisted registration ──
+  // ── Approve waitlisted registration(s) — batch-aware, one email ──
   const handleApproveWaitlist = async (reg) => {
     const child = childMap[reg.child_id];
-    const wk = weekMap[reg.week_id];
     const div = divisionMap[reg.division_id];
     const parentId = child?.parent_id;
     const parent = parentMap[parentId];
-    const label = `${child?.first_name || "?"} — ${wk?.name || "?"}`;
 
-    if (!window.confirm(`Approve ${label} from the waitlist?\n\nThis will:\n• Move status to "pending"\n• Add $${(reg.price_cents / 100).toFixed(0)} to the family balance\n• Send an email notification to the parent`)) return;
+    // Find ALL waitlisted regs for this same child
+    const allWaitlisted = registrations.filter(
+      (r) => r.child_id === reg.child_id && r.status === "waitlisted"
+    );
+
+    let regsToApprove = [reg];
+
+    if (allWaitlisted.length > 1) {
+      const weekNames = allWaitlisted.map((r) => weekMap[r.week_id]?.name || "Week").join(", ");
+      const totalCents = allWaitlisted.reduce((sum, r) => sum + (Number(r.price_cents) || 0), 0);
+      const choice = window.confirm(
+        `${child?.first_name} has ${allWaitlisted.length} waitlisted weeks: ${weekNames}\n\n` +
+        `Total: $${(totalCents / 100).toFixed(0)}\n\n` +
+        `OK = Approve ALL ${allWaitlisted.length} weeks (1 email)\n` +
+        `Cancel = Go back`
+      );
+      if (!choice) return;
+      regsToApprove = allWaitlisted;
+    } else {
+      const wk = weekMap[reg.week_id];
+      if (!window.confirm(`Approve ${child?.first_name} — ${wk?.name} from the waitlist?\n\nThis will add $${(reg.price_cents / 100).toFixed(0)} to the family balance and notify the parent.`)) return;
+    }
 
     setSaving(true);
     try {
-      // Change status from waitlisted → pending
-      await sb.query("registrations", {
-        method: "PATCH",
-        body: { status: "pending", waitlist_position: null, updated_at: new Date().toISOString() },
-        filters: `&id=eq.${reg.id}`,
-        headers: { Prefer: "return=minimal" },
-      });
+      let totalPriceCents = 0;
+      const approvedWeekDetails = [];
 
-      // Add price to family ledger
-      if (parentId) {
+      // Process each registration
+      for (const r of regsToApprove) {
+        await sb.query("registrations", {
+          method: "PATCH",
+          body: { status: "pending", waitlist_position: null, updated_at: new Date().toISOString() },
+          filters: `&id=eq.${r.id}`,
+          headers: { Prefer: "return=minimal" },
+        });
+        totalPriceCents += Number(r.price_cents) || 0;
+        const wk = weekMap[r.week_id];
+        approvedWeekDetails.push({ name: wk?.name || "Week", priceCents: r.price_cents });
+      }
+
+      // Add total price to family ledger — one operation
+      if (parentId && totalPriceCents > 0) {
         const ledger = ledgerMap[parentId];
         if (ledger) {
-          const newDue = (Number(ledger.total_due_cents) || 0) + (Number(reg.price_cents) || 0);
+          const newDue = (Number(ledger.total_due_cents) || 0) + totalPriceCents;
           await sb.query("family_ledger", {
             method: "PATCH",
             body: { total_due_cents: newDue, updated_at: new Date().toISOString() },
@@ -818,13 +845,13 @@ export default function AdminDashboard({ user, setView, showToast }) {
         } else {
           await sb.query("family_ledger", {
             method: "POST",
-            body: { parent_id: parentId, total_due_cents: Number(reg.price_cents) || 0, total_paid_cents: 0, discount_amount_cents: 0 },
+            body: { parent_id: parentId, total_due_cents: totalPriceCents, total_paid_cents: 0, discount_amount_cents: 0 },
             headers: { Prefer: "return=minimal" },
           });
         }
       }
 
-      // Send approval email
+      // Send ONE email with all approved weeks
       const PRESCHOOL_GRADES = { "-5": "Infants", "-4": "Toddler", "-3": "Pre Nursery", "-2": "Nursery", "-1": "Pre K" };
       const className = PRESCHOOL_GRADES[String(child?.grade)] || "";
       try {
@@ -840,14 +867,15 @@ export default function AdminDashboard({ user, setView, showToast }) {
               childName: `${child?.first_name} ${child?.last_name}`,
               className,
               divisionName: div?.name || "Preschool",
-              weekName: wk?.name || "Week",
-              priceCents: reg.price_cents,
+              weeks: approvedWeekDetails,
+              totalCents: totalPriceCents,
             },
           }),
         });
       } catch (e) { console.warn("Approval email failed:", e.message); }
 
-      showToast(`Approved: ${label}. Email sent to ${parent?.email || "parent"}.`);
+      const count = regsToApprove.length;
+      showToast(`Approved ${count} week${count !== 1 ? "s" : ""} for ${child?.first_name}. Email sent to ${parent?.email || "parent"}.`);
       load();
     } catch (e) {
       alert("Error approving: " + e.message);

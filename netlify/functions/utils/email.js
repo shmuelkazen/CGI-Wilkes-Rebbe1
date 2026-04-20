@@ -389,11 +389,17 @@ function waitlistConfirmationEmail({ parentName, childName, className, divisionN
 }
 
 // ── Waitlist Approved (sent to parent when admin approves from waitlist) ──
-function waitlistApprovedEmail({ parentName, childName, className, divisionName, weekName, priceCents }) {
+function waitlistApprovedEmail({ parentName, childName, className, divisionName, weeks, totalCents }) {
+  const weekRows = (weeks || []).map((w) => `
+    <tr>
+      <td style="padding:6px 12px; color:#374737; font-size:14px; border-bottom:1px solid #e8ede8;">${w.name}</td>
+      <td style="padding:6px 12px; color:#374737; font-size:14px; text-align:right; border-bottom:1px solid #e8ede8;">${formatCents(w.priceCents)}</td>
+    </tr>`).join("");
+
   const body = `
-    <h2 ${styles.heading}>A Spot Has Opened!</h2>
+    <h2 ${styles.heading}>${weeks.length === 1 ? "A Spot Has Opened!" : "Spots Have Opened!"}</h2>
     <p ${styles.text}>Hi ${parentName},</p>
-    <p ${styles.text}>Great news! A spot has become available for <strong>${childName}</strong> in the <strong>${className}</strong> class.</p>
+    <p ${styles.text}>Great news! ${weeks.length === 1 ? "A spot has" : "Spots have"} become available for <strong>${childName}</strong> in the <strong>${className}</strong> class.</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
         <td style="padding:16px; background-color:#e6f4ea; border-radius:8px; border: 1px solid #c8e6c9;">
@@ -410,19 +416,22 @@ function waitlistApprovedEmail({ parentName, childName, className, divisionName,
               <td style="color:#374737; font-size:14px; padding:4px 0;"><strong>Class:</strong></td>
               <td style="color:#374737; font-size:14px; text-align:right;">${className}</td>
             </tr>
-            <tr>
-              <td style="color:#374737; font-size:14px; padding:4px 0;"><strong>Week:</strong></td>
-              <td style="color:#374737; font-size:14px; text-align:right;">${weekName}</td>
-            </tr>
-            ${priceCents ? `<tr>
-              <td style="color:#374737; font-size:14px; padding:4px 0;"><strong>Amount Due:</strong></td>
-              <td style="color:#1a5c2e; font-size:14px; font-weight:700; text-align:right;">${formatCents(priceCents)}</td>
-            </tr>` : ""}
+          </table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px; border-top:1px solid #c8e6c9; padding-top:8px;">
+            <thead><tr>
+              <th style="text-align:left; padding:6px 12px; color:#1a5c2e; font-size:12px; font-weight:600;">Week</th>
+              <th style="text-align:right; padding:6px 12px; color:#1a5c2e; font-size:12px; font-weight:600;">Amount</th>
+            </tr></thead>
+            <tbody>${weekRows}</tbody>
+            ${totalCents ? `<tfoot><tr>
+              <td style="padding:8px 12px; font-size:14px; font-weight:700; color:#1a5c2e;">Total Due</td>
+              <td style="padding:8px 12px; font-size:14px; font-weight:700; color:#1a5c2e; text-align:right;">${formatCents(totalCents)}</td>
+            </tr></tfoot>` : ""}
           </table>
         </td>
       </tr>
     </table>
-    <p ${styles.text}>Please log in to complete your payment and secure this spot:</p>
+    <p ${styles.text}>Please log in to complete your payment and secure ${weeks.length === 1 ? "this spot" : "these spots"}:</p>
     <p style="text-align:center;">
       <a href="${SITE_URL}" ${styles.button}>Complete Payment &rarr;</a>
     </p>
@@ -430,7 +439,7 @@ function waitlistApprovedEmail({ parentName, childName, className, divisionName,
   `;
 
   return {
-    subject: `${CAMP_NAME} — Spot Available for ${childName}!`,
+    subject: `${CAMP_NAME} — ${weeks.length === 1 ? "Spot" : "Spots"} Available for ${childName}!`,
     html: wrapEmail(body),
   };
 }

@@ -171,14 +171,14 @@ exports.handler = async (event) => {
 
       // ── Waitlist Approved ─────────────────────────────────
       case "waitlist_approved": {
-        const { parentId, parentEmail, parentName, childName, className, divisionName, weekName, priceCents } = data;
+        const { parentId, parentEmail, parentName, childName, className, divisionName, weeks, totalCents } = data;
         emailContent = waitlistApprovedEmail({
           parentName: parentName || "Camp Family",
           childName,
           className,
           divisionName,
-          weekName,
-          priceCents,
+          weeks: weeks || [],
+          totalCents,
         });
         recipientEmails = [parentEmail];
         if (parentId) {
