@@ -79,7 +79,7 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
   if (mode === "landing") {
     return (
       <div style={{ position: "relative", minHeight: "100vh", background: `linear-gradient(170deg, ${colors.forest} 0%, ${colors.forestLight} 50%, ${colors.amber} 150%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
-        <div style={{ position: "absolute", top: 12, right: 16, color: "rgba(255,255,255,.6)", fontSize: 13, fontFamily: "serif" }}>בס״ד</div>
+        <div style={{ position: "absolute", top: 12, right: 16, color: "#fff", fontSize: 15, fontWeight: "bold", fontFamily: "serif", textShadow: "0 1px 3px rgba(0,0,0,.3)" }}>בס״ד</div>
         <div style={{ animation: "fadeIn .5s ease", maxWidth: 420, width: "100%" }}>
           <img src="/logo.png" alt="CGI Wilkes Rebbe" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 8 }} />
           <h1 style={{ fontFamily: font.display, fontSize: "clamp(32px, 6vw, 52px)", color: "#fff", lineHeight: 1.1, marginBottom: 12 }}>CGI Wilkes Rebbe</h1>
@@ -122,7 +122,7 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", background: `linear-gradient(170deg, ${colors.forest} 0%, ${colors.forestLight} 50%, ${colors.amber} 150%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ position: "absolute", top: 12, right: 16, color: "rgba(255,255,255,.6)", fontSize: 13, fontFamily: "serif" }}>בס״ד</div>
+      <div style={{ position: "absolute", top: 12, right: 16, color: "#fff", fontSize: 15, fontWeight: "bold", fontFamily: "serif", textShadow: "0 1px 3px rgba(0,0,0,.3)" }}>בס״ד</div>
       <div style={{ animation: "fadeIn .35s ease", maxWidth: 400, width: "100%" }}>
         {/* Back button — not on newpassword since they arrived via email link */}
         {mode !== "newpassword" && (

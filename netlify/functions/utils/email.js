@@ -7,7 +7,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const FROM_EMAIL = process.env.FROM_EMAIL || "onboarding@resend.dev";
 const CAMP_NAME = "CGI Wilkes Rebbe";
 const SITE_URL = process.env.SITE_URL || "https://cgikingston.com";
-const LOGO_URL = process.env.CAMP_LOGO_URL || `${SITE_URL}/images/camp-logo.png`;
+const LOGO_URL = process.env.CAMP_LOGO_URL || `${SITE_URL}/logo.png`;
 
 // ── Send via Resend API ──────────────────────────────────────
 async function sendEmail({ to, subject, html, replyTo }) {
@@ -66,6 +66,7 @@ function wrapEmail(bodyContent) {
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
           <tr>
             <td style="background: linear-gradient(135deg, #1a5c2e 0%, #2d7a45 100%); padding: 28px 32px; text-align:center;">
+              <p style="margin:0 0 10px; text-align:right; color:#ffffff; font-size:15px; font-weight:bold; font-family: Georgia, 'Times New Roman', serif;">בס״ד</p>
               <img src="${LOGO_URL}" alt="${CAMP_NAME}" width="80" height="80" style="display:block; margin: 0 auto 12px; border-radius:50%; border: 3px solid rgba(255,255,255,0.3);" onerror="this.style.display='none'">
               <h1 style="margin:0; color:#ffffff; font-size:24px; font-weight:700; letter-spacing:0.5px; font-family: Georgia, 'Times New Roman', serif;">
                 ${CAMP_NAME}
