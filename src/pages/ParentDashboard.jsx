@@ -619,10 +619,11 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       {/* Header */}
       <header style={{ background: colors.forest, padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {Icons.trees({ color: "#fff", size: 24 })}
+          <img src="/logo.png" alt="CGI Wilkes Rebbe" style={{ width: 28, height: 28, objectFit: "contain", borderRadius: "50%" }} />
           <span style={{ fontFamily: font.display, color: "#fff", fontSize: 20 }}>{campName}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ color: "#fff", fontSize: 15, fontWeight: "bold", fontFamily: "serif" }}>בס״ד</span>
           {isAdmin && <button onClick={() => setView("admin")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.8)", padding: "6px 14px", fontSize: 13 }}>{Icons.shield({ size: 14, color: "rgba(255,255,255,.8)" })} Admin</button>}
           <button onClick={() => setModal("profile")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.8)", padding: "6px 14px", fontSize: 13 }}>{Icons.user({ size: 14, color: "rgba(255,255,255,.8)" })} Profile</button>
           <button onClick={handleSignOut} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.6)", padding: "6px 10px" }}>{Icons.logout({ size: 16, color: "rgba(255,255,255,.6)" })}</button>

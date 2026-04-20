@@ -966,8 +966,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
   return (
     <div style={{ minHeight: "100vh", background: colors.bg }}>
       <header style={{ background: colors.forest, padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{Icons.trees({ color: "#fff", size: 24 })}<span style={{ fontFamily: font.display, color: "#fff", fontSize: 20 }}>{campName}</span><span style={s.badge("#fff")}>Admin</span></div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}><button onClick={() => setView("parent")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.8)", padding: "6px 14px", fontSize: 13 }}>{Icons.home({ size: 14, color: "rgba(255,255,255,.8)" })} Parent View</button><button onClick={handleSignOut} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.6)", padding: "6px 10px" }}>{Icons.logout({ size: 16, color: "rgba(255,255,255,.6)" })}</button></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><img src="/logo.png" alt="CGI Wilkes Rebbe" style={{ width: 28, height: 28, objectFit: "contain", borderRadius: "50%" }} /><span style={{ fontFamily: font.display, color: "#fff", fontSize: 20 }}>{campName}</span><span style={s.badge("#fff")}>Admin</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ color: "#fff", fontSize: 15, fontWeight: "bold", fontFamily: "serif" }}>בס״ד</span><button onClick={() => setView("parent")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.8)", padding: "6px 14px", fontSize: 13 }}>{Icons.home({ size: 14, color: "rgba(255,255,255,.8)" })} Parent View</button><button onClick={handleSignOut} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.6)", padding: "6px 10px" }}>{Icons.logout({ size: 16, color: "rgba(255,255,255,.6)" })}</button></div>
       </header>
 
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
