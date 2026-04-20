@@ -240,7 +240,7 @@ export async function getSeasons() {
   try {
     return await sb.query("seasons", { filters: "&order=year.desc" });
   } catch {
-    return [];
+    return []; 
   }
 }
 

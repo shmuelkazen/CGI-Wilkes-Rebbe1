@@ -136,7 +136,7 @@ exports.handler = async (event) => {
 
     // Get code discount credits and payments from ledger
     const discountLogs = await supabaseQuery("payment_log", {
-      filters: `&parent_id=eq.${parentId}&method=eq.discount`,
+      filters: `&parent_id=eq.${parentId}&method=eq.discount&discount_code_id=not.is.null`,
     }) || [];
     const totalCodeCredits = discountLogs.reduce((sum, d) => sum + (Number(d.amount_cents) || 0), 0);
 
