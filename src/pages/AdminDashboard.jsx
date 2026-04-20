@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import sb from "../lib/supabase";
+import BunkAssignments from "./BunkAssignments";
 import { colors, font, s } from "../lib/styles";
 import Icons from "../lib/icons";
 import { Spinner, EmptyState, StatusBadge, Modal, Field } from "../components/UI";
@@ -982,7 +983,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
         </div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0, flexWrap: "wrap" }}>
-          {[{ key: "registrations", label: "Registrations", icon: Icons.clipboard }, { key: "divisions", label: "Divisions & Weeks", icon: Icons.calendar }, { key: "families", label: "Families", icon: Icons.users }, { key: "discounts", label: "Discounts", icon: Icons.dollar }, { key: "shirts", label: "T-Shirts", icon: Icons.clipboard }, { key: "settings", label: "Settings", icon: Icons.shield }].map((t) => (
+          {[{ key: "registrations", label: "Registrations", icon: Icons.clipboard }, { key: "divisions", label: "Divisions & Weeks", icon: Icons.calendar }, { key: "families", label: "Families", icon: Icons.users }, { key: "discounts", label: "Discounts", icon: Icons.dollar }, { key: "shirts", label: "T-Shirts", icon: Icons.clipboard }, { key: "bunks", label: "Bunks", icon: Icons.users }, { key: "settings", label: "Settings", icon: Icons.shield }].map((t) => (
             <button key={t.key} onClick={() => t.key === "settings" ? setSettingsModal(true) : setTab(t.key)} style={{ ...s.btn("ghost"), borderBottom: `2px solid ${tab === t.key ? colors.forest : "transparent"}`, color: tab === t.key ? colors.forest : colors.textMid, borderRadius: 0, padding: "10px 16px", fontWeight: 600, fontSize: 14 }}>{t.icon({ size: 15, color: tab === t.key ? colors.forest : colors.textMid })} {t.label}</button>
           ))}
         </div>
@@ -1137,9 +1138,17 @@ export default function AdminDashboard({ user, setView, showToast }) {
               </tr>); })}</tbody></table></div>
           )}
         </div>)}
-      </div>
 
-      {/* Modals */}
+        {tab === "bunks" && (
+          <BunkAssignments
+            divisions={divisions}
+            weeks={weeks}
+            children={children}
+            registrations={registrations}
+            showToast={showToast}
+          />
+        )}
+      </div>
       {divisionModal && <DivisionModal division={divisionModal === "create" ? null : divisionModal} onClose={() => setDivisionModal(null)} onSave={handleSaveDivision} saving={saving} />}
       {weekModal && <WeekModal week={weekModal === "create" ? null : weekModal} division={weekModalDivision} onClose={() => { setWeekModal(null); setWeekModalDivision(null); }} onSave={handleSaveWeek} saving={saving} />}
       {discountModal && <DiscountCodeModal code={discountModal === "create" ? null : discountModal} onClose={() => setDiscountModal(null)} onSave={async (data) => { setSaving(true); try { if (discountModal === "create") { await sb.query("discount_codes", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Discount code created!"); } else { await sb.query("discount_codes", { method: "PATCH", body: data, filters: `&id=eq.${discountModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Discount code updated!"); } setDiscountModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } }} saving={saving} />}
