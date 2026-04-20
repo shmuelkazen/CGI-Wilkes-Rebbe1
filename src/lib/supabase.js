@@ -91,11 +91,13 @@ const sb = {
     this.user = null;
   },
 
-  async signInWithEmail(email, password) {
+  async signInWithEmail(email, password, captchaToken) {
+    const body = { email, password };
+    if (captchaToken) body.gotrue_meta_security = { captcha_token: captchaToken };
     const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -106,15 +108,17 @@ const sb = {
     return session;
   },
 
-  async signUpWithEmail(email, password, firstName = "", lastName = "") {
+  async signUpWithEmail(email, password, firstName = "", lastName = "", captchaToken) {
+    const body = {
+      email,
+      password,
+      data: { first_name: firstName, last_name: lastName, full_name: `${firstName} ${lastName}`.trim() },
+    };
+    if (captchaToken) body.gotrue_meta_security = { captcha_token: captchaToken };
     const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
-      body: JSON.stringify({
-        email,
-        password,
-        data: { first_name: firstName, last_name: lastName, full_name: `${firstName} ${lastName}`.trim() },
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

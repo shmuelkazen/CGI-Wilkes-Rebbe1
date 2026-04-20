@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { colors, font, s } from "../lib/styles";
 import Icons from "../lib/icons";
 import { Spinner } from "./UI";
@@ -13,6 +13,43 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const captchaRef = useRef(null);
+  const captchaWidgetId = useRef(null);
+
+  // Load hCaptcha script once
+  useEffect(() => {
+    if (document.getElementById("hcaptcha-script")) return;
+    const script = document.createElement("script");
+    script.id = "hcaptcha-script";
+    script.src = "https://js.hcaptcha.com/1/api.js?render=explicit";
+    script.async = true;
+    document.head.appendChild(script);
+  }, []);
+
+  // Render/reset captcha widget when mode changes to login or signup
+  useEffect(() => {
+    if (mode !== "login" && mode !== "signup") return;
+    setCaptchaToken(null);
+    const interval = setInterval(() => {
+      if (window.hcaptcha && captchaRef.current) {
+        clearInterval(interval);
+        if (captchaWidgetId.current !== null) {
+          try { window.hcaptcha.reset(captchaWidgetId.current); } catch (e) { /* ignore */ }
+          try { window.hcaptcha.remove(captchaWidgetId.current); } catch (e) { /* ignore */ }
+        }
+        captchaRef.current.innerHTML = "";
+        captchaWidgetId.current = window.hcaptcha.render(captchaRef.current, {
+          sitekey: "0fa260b6-dc36-488e-926e-162609f20dae",
+          theme: "dark",
+          callback: (token) => setCaptchaToken(token),
+          "expired-callback": () => setCaptchaToken(null),
+          "error-callback": () => setCaptchaToken(null),
+        });
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [mode]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,9 +73,9 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
     setSubmitting(true);
     try {
       if (mode === "login") {
-        await onEmailSignIn(email, password);
+        await onEmailSignIn(email, password, captchaToken);
       } else if (mode === "signup") {
-        await onEmailSignUp(email, password, firstName.trim(), lastName.trim());
+        await onEmailSignUp(email, password, firstName.trim(), lastName.trim(), captchaToken);
       } else if (mode === "forgot") {
         await onForgotPassword(email);
         setSuccess("Check your email for a password reset link.");
@@ -47,6 +84,10 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
       }
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again.");
+      setCaptchaToken(null);
+      if (window.hcaptcha && captchaWidgetId.current !== null) {
+        try { window.hcaptcha.reset(captchaWidgetId.current); } catch (e) { /* ignore */ }
+      }
     } finally {
       setSubmitting(false);
     }
@@ -211,6 +252,11 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
                 style={inputStyle}
               />
             </>
+          )}
+
+          {/* hCaptcha — login and signup only */}
+          {(mode === "login" || mode === "signup") && (
+            <div ref={captchaRef} style={{ display: "flex", justifyContent: "center", minHeight: 78 }} />
           )}
 
           {/* Error message */}
