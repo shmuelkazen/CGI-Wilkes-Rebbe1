@@ -720,6 +720,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const [adminChildParentId, setAdminChildParentId] = useState(null);
   const [registerChild, setRegisterChild] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [waitlistApprovalRegs, setWaitlistApprovalRegs] = useState(null); // array of regs for modal
+  const [waitlistApprovalSelected, setWaitlistApprovalSelected] = useState(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -783,42 +785,42 @@ export default function AdminDashboard({ user, setView, showToast }) {
 
   const handleSaveDivision = async (data) => { setSaving(true); try { if (divisionModal && divisionModal !== "create") { await sb.query("divisions", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${divisionModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Division updated!"); } else { await sb.query("divisions", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Division created!"); } setDivisionModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
 
-  // ── Approve waitlisted registration(s) — batch-aware, one email ──
+  // ── Approve waitlisted registration(s) — opens modal if multiple ──
   const handleApproveWaitlist = async (reg) => {
     const child = childMap[reg.child_id];
-    const div = divisionMap[reg.division_id];
-    const parentId = child?.parent_id;
-    const parent = parentMap[parentId];
-
-    // Find ALL waitlisted regs for this same child
     const allWaitlisted = registrations.filter(
       (r) => r.child_id === reg.child_id && r.status === "waitlisted"
     );
 
-    let regsToApprove = [reg];
-
     if (allWaitlisted.length > 1) {
-      const weekNames = allWaitlisted.map((r) => weekMap[r.week_id]?.name || "Week").join(", ");
-      const totalCents = allWaitlisted.reduce((sum, r) => sum + (Number(r.price_cents) || 0), 0);
-      const choice = window.confirm(
-        `${child?.first_name} has ${allWaitlisted.length} waitlisted weeks: ${weekNames}\n\n` +
-        `Total: $${(totalCents / 100).toFixed(0)}\n\n` +
-        `OK = Approve ALL ${allWaitlisted.length} weeks (1 email)\n` +
-        `Cancel = Go back`
-      );
-      if (!choice) return;
-      regsToApprove = allWaitlisted;
-    } else {
-      const wk = weekMap[reg.week_id];
-      if (!window.confirm(`Approve ${child?.first_name} — ${wk?.name} from the waitlist?\n\nThis will add $${(reg.price_cents / 100).toFixed(0)} to the family balance and notify the parent.`)) return;
+      // Multiple weeks — open selection modal
+      setWaitlistApprovalRegs(allWaitlisted);
+      setWaitlistApprovalSelected(new Set(allWaitlisted.map((r) => r.id)));
+      return;
     }
+
+    // Single week — direct approve with confirm
+    const wk = weekMap[reg.week_id];
+    const parentId = child?.parent_id;
+    const parent = parentMap[parentId];
+    if (!window.confirm(`Approve ${child?.first_name} — ${wk?.name} from the waitlist?\n\nThis will add $${(reg.price_cents / 100).toFixed(0)} to the family balance and notify the parent.`)) return;
+
+    await processWaitlistApproval([reg]);
+  };
+
+  // ── Process selected waitlist approvals — shared by single + batch ──
+  const processWaitlistApproval = async (regsToApprove) => {
+    if (regsToApprove.length === 0) return;
+    const child = childMap[regsToApprove[0].child_id];
+    const div = divisionMap[regsToApprove[0].division_id];
+    const parentId = child?.parent_id;
+    const parent = parentMap[parentId];
 
     setSaving(true);
     try {
       let totalPriceCents = 0;
       const approvedWeekDetails = [];
 
-      // Process each registration
       for (const r of regsToApprove) {
         await sb.query("registrations", {
           method: "PATCH",
@@ -876,6 +878,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
 
       const count = regsToApprove.length;
       showToast(`Approved ${count} week${count !== 1 ? "s" : ""} for ${child?.first_name}. Email sent to ${parent?.email || "parent"}.`);
+      setWaitlistApprovalRegs(null);
+      setWaitlistApprovalSelected(new Set());
       load();
     } catch (e) {
       alert("Error approving: " + e.message);
@@ -896,7 +900,11 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const handleAdminRegister = async (regData) => {
     setSaving(true);
     try {
-      for (const week of regData.weeks) {
+      // Admin bypasses capacity — merge waitlist_weeks into regular weeks, all go as pending
+      const allWeeks = [...(regData.weeks || []), ...(regData.waitlist_weeks || [])];
+      const allTotalCents = allWeeks.reduce((sum, w) => sum + (w.price_cents || 0), 0);
+
+      for (const week of allWeeks) {
         await sb.query("registrations", {
           method: "POST",
           body: { child_id: regData.child_id, division_id: week.division_id, week_id: week.week_id, price_cents: week.price_cents, status: "pending" },
@@ -906,7 +914,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
       const parentId = registerChild?.parent_id;
       if (parentId) {
         const ledger = ledgerMap[parentId];
-        const currentDue = (ledger?.total_due_cents || 0) + regData.total_cents;
+        const currentDue = (ledger?.total_due_cents || 0) + allTotalCents;
         if (ledger) {
           await sb.query("family_ledger", {
             method: "PATCH",
@@ -917,12 +925,12 @@ export default function AdminDashboard({ user, setView, showToast }) {
         } else {
           await sb.query("family_ledger", {
             method: "POST",
-            body: { parent_id: parentId, total_due_cents: regData.total_cents, discount_amount_cents: regData.discount_cents },
+            body: { parent_id: parentId, total_due_cents: allTotalCents, discount_amount_cents: regData.discount_cents },
             headers: { Prefer: "return=minimal" },
           });
         }
       }
-      showToast(`Registered for ${regData.weeks.length} week${regData.weeks.length !== 1 ? "s" : ""}!`);
+      showToast(`Registered for ${allWeeks.length} week${allWeeks.length !== 1 ? "s" : ""}!`);
       setRegisterChild(null);
       load();
     } catch (e) {
@@ -1136,7 +1144,92 @@ export default function AdminDashboard({ user, setView, showToast }) {
       {settingsModal && <SettingsModal settings={settings} onClose={() => setSettingsModal(false)} onSave={handleSaveSettings} saving={saving} />}
       {familyModal && !adminChildModal && !registerChild && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRegisterChild={(kid) => setRegisterChild(kid)} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} saving={saving} />}
       {adminChildModal && <AdminChildModal child={adminChildModal === "create" ? null : adminChildModal} parentId={adminChildParentId} divisions={divisions} onClose={() => { setAdminChildModal(null); setAdminChildParentId(null); }} onSave={handleSaveAdminChild} saving={saving} />}
-      {registerChild && <RegisterModal child={registerChild} divisions={divisions} weeks={weeks} existingRegs={registrations.filter((r) => r.child_id === registerChild.id && r.status !== "cancelled")} settings={settings} siblingCount={children.filter((c) => c.parent_id === registerChild.parent_id).length} parent={parentMap[registerChild.parent_id]} onClose={() => setRegisterChild(null)} onRegister={handleAdminRegister} saving={saving} />}
+      {registerChild && <RegisterModal child={registerChild} divisions={divisions} weeks={weeks} existingRegs={registrations.filter((r) => r.child_id === registerChild.id && r.status !== "cancelled")} settings={settings} siblingCount={children.filter((c) => c.parent_id === registerChild.parent_id).length} parent={parentMap[registerChild.parent_id]} onClose={() => setRegisterChild(null)} onRegister={handleAdminRegister} saving={saving} isAdmin={true} />}
+
+      {/* Waitlist Approval Modal — select which weeks to approve */}
+      {waitlistApprovalRegs && (() => {
+        const child = childMap[waitlistApprovalRegs[0]?.child_id];
+        const div = divisionMap[waitlistApprovalRegs[0]?.division_id];
+        const parent = child ? parentMap[child.parent_id] : null;
+        const selectedTotal = waitlistApprovalRegs
+          .filter((r) => waitlistApprovalSelected.has(r.id))
+          .reduce((sum, r) => sum + (Number(r.price_cents) || 0), 0);
+        const toggleWaitlistWeek = (id) => {
+          setWaitlistApprovalSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+          });
+        };
+        return (
+          <Modal title={`Approve Waitlist — ${child?.first_name} ${child?.last_name}`} onClose={() => { setWaitlistApprovalRegs(null); setWaitlistApprovalSelected(new Set()); }} width={500}>
+            <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 4 }}>
+              {div?.name} · {parent?.full_name} ({parent?.email})
+            </div>
+            <div style={{ fontSize: 14, marginBottom: 16 }}>
+              Select which weeks to approve. Unchecked weeks will remain on the waitlist.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 10 }}>
+              <button onClick={() => setWaitlistApprovalSelected(new Set(waitlistApprovalRegs.map((r) => r.id)))} style={{ ...s.btn("ghost"), fontSize: 12, padding: "4px 8px", color: colors.forest }}>Select All</button>
+              <button onClick={() => setWaitlistApprovalSelected(new Set())} style={{ ...s.btn("ghost"), fontSize: 12, padding: "4px 8px", color: colors.textMid }}>None</button>
+            </div>
+
+            <div style={{ display: "grid", gap: 8, marginBottom: 20 }}>
+              {waitlistApprovalRegs.map((r) => {
+                const wk = weekMap[r.week_id];
+                const checked = waitlistApprovalSelected.has(r.id);
+                return (
+                  <div key={r.id} onClick={() => toggleWaitlistWeek(r.id)} style={{
+                    ...s.card, padding: 12, cursor: "pointer",
+                    border: `2px solid ${checked ? colors.forest : colors.border}`,
+                    background: checked ? colors.forestPale : colors.card,
+                    transition: "all .15s",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${checked ? colors.forest : colors.border}`, background: checked ? colors.forest : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all .15s" }}>
+                          {checked && Icons.check({ size: 12, color: "#fff" })}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{wk?.name || "Week"}</div>
+                          <div style={{ fontSize: 12, color: colors.textMid }}>{fmtDate(wk?.start_date)} – {fmtDate(wk?.end_date)}</div>
+                        </div>
+                      </div>
+                      <div style={{ fontFamily: font.display, fontSize: 16, color: colors.forest }}>${((r.price_cents || 0) / 100).toFixed(0)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Total */}
+            <div style={{ ...s.card, background: colors.forestPale, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{waitlistApprovalSelected.size} week{waitlistApprovalSelected.size !== 1 ? "s" : ""} selected</span>
+              <span style={{ fontFamily: font.display, fontSize: 20, color: colors.forest }}>${(selectedTotal / 100).toFixed(0)}</span>
+            </div>
+
+            <div style={{ fontSize: 12, color: colors.textMid, marginBottom: 16 }}>
+              This will add ${(selectedTotal / 100).toFixed(0)} to the family balance and send one email to {parent?.email || "the parent"}.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button onClick={() => { setWaitlistApprovalRegs(null); setWaitlistApprovalSelected(new Set()); }} style={s.btn("secondary")}>Cancel</button>
+              <button
+                onClick={() => {
+                  const selected = waitlistApprovalRegs.filter((r) => waitlistApprovalSelected.has(r.id));
+                  if (selected.length === 0) return alert("Select at least one week to approve.");
+                  processWaitlistApproval(selected);
+                }}
+                disabled={saving || waitlistApprovalSelected.size === 0}
+                style={{ ...s.btn("primary"), opacity: waitlistApprovalSelected.size > 0 ? 1 : 0.5 }}
+              >
+                {saving ? <Spinner size={16} /> : `Approve ${waitlistApprovalSelected.size} Week${waitlistApprovalSelected.size !== 1 ? "s" : ""}`}
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
     </div>    
   );
 }
