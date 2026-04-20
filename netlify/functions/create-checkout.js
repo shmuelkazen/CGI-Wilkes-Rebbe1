@@ -26,6 +26,38 @@ async function supabaseQuery(table, { method = "GET", body, filters = "", select
   return text ? JSON.parse(text) : null;
 }
 
+// ── Get or create a Stripe Customer for this parent ──────────
+async function getOrCreateStripeCustomer(parent, email) {
+  // Already have a Stripe Customer ID saved
+  if (parent?.stripe_customer_id) {
+    try {
+      const existing = await stripe.customers.retrieve(parent.stripe_customer_id);
+      if (!existing.deleted) return existing.id;
+    } catch (e) {
+      console.warn("Saved Stripe customer not found, creating new:", e.message);
+    }
+  }
+
+  // Create new Stripe Customer
+  const customer = await stripe.customers.create({
+    email: email || undefined,
+    name: parent?.full_name || undefined,
+    metadata: { parent_id: parent?.id || "" },
+  });
+
+  // Save to parents table
+  if (parent?.id) {
+    await supabaseQuery("parents", {
+      method: "PATCH",
+      body: { stripe_customer_id: customer.id },
+      filters: `&id=eq.${parent.id}`,
+      headers: { Prefer: "return=minimal" },
+    });
+  }
+
+  return customer.id;
+}
+
 exports.handler = async (event) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -48,10 +80,13 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: "Parent ID and amount are required" }) };
     }
 
-    const parents = await supabaseQuery("parents", { filters: `&id=eq.${parentId}` });
+    const parents = await supabaseQuery("parents", { filters: `&id=eq.${parentId}`, select: "*" });
     const parent = parents && parents[0];
     const email = parentEmail || parent?.email || "";
     const baseUrl = siteUrl || process.env.SITE_URL || "https://register.cgikingston.com";
+
+    // Get or create Stripe Customer (saves card for future charges/refunds)
+    const stripeCustomerId = await getOrCreateStripeCustomer(parent, email);
 
     // ── Registration Fee ──
     if (isRegistrationFee) {
@@ -66,7 +101,9 @@ exports.handler = async (event) => {
           quantity: 1,
         }],
         mode: "payment",
-        customer_email: email,
+        customer: stripeCustomerId,
+        payment_intent_data: { setup_future_usage: "off_session" },
+        custom_text: { submit: { message: "I authorize CGI Wilkes Rebbe to charge this payment method for any remaining camp balance." } },
         success_url: `${baseUrl}?payment=success`,
         cancel_url: `${baseUrl}?payment=cancelled`,
         metadata: { parent_id: parentId, amount_cents: String(amountCents), is_registration_fee: "true" },
@@ -87,7 +124,9 @@ exports.handler = async (event) => {
           quantity: 1,
         }],
         mode: "payment",
-        customer_email: email,
+        customer: stripeCustomerId,
+        payment_intent_data: { setup_future_usage: "off_session" },
+        custom_text: { submit: { message: "I authorize CGI Wilkes Rebbe to charge this payment method for any remaining camp balance." } },
         success_url: `${baseUrl}?payment=success`,
         cancel_url: `${baseUrl}?payment=cancelled`,
         metadata: { parent_id: parentId, amount_cents: String(amountCents), is_shirt_order: "true", shirt_order_id: shirtOrderId || "" },
@@ -193,7 +232,9 @@ exports.handler = async (event) => {
       payment_method_types: ["card"],
       line_items,
       mode: "payment",
-      customer_email: email,
+      customer: stripeCustomerId,
+      payment_intent_data: { setup_future_usage: "off_session" },
+      custom_text: { submit: { message: "I authorize CGI Wilkes Rebbe to charge this payment method for any remaining camp balance." } },
       success_url: `${baseUrl}?payment=success`,
       cancel_url: `${baseUrl}?payment=cancelled`,
       metadata: { parent_id: parentId, amount_cents: String(amountCents) },

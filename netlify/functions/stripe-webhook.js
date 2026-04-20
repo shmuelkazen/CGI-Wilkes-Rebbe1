@@ -138,6 +138,15 @@ exports.handler = async (event) => {
 
     if (parentId && amountCents > 0) {
       try {
+        // Ensure stripe_customer_id is saved (safety net — create-checkout should have done this)
+        if (session.customer) {
+          await supabaseQuery("parents", {
+            method: "PATCH",
+            body: { stripe_customer_id: session.customer },
+            filters: `&id=eq.${parentId}&stripe_customer_id=is.null`,
+            headers: { Prefer: "return=minimal" },
+          }).catch((e) => console.warn("Could not save stripe_customer_id:", e.message));
+        }
         // Get parent info for emails
         const parentInfo = await getParentInfo(parentId);
         const recipientEmails = getAllRecipients(parentInfo, session.customer_email);
