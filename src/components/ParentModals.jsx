@@ -112,11 +112,6 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
       alert("Please select a class/grade.");
       return false;
     }
-    const isPreschool = matchedDivision && (matchedDivision.name || "").toLowerCase().includes("preschool");
-    if (!form.tshirt_size && !isPreschool) {
-      alert("Please select a T-shirt size.");
-      return false;
-    }
     if (!form.has_food_allergies) {
       alert("Please indicate whether your child has any food allergies or dietary restrictions.");
       return false;
@@ -231,14 +226,6 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
           <select style={s.input} value={form.grade} onChange={(e) => set("grade", e.target.value)}>
             <option value="">—</option>
             {gradeOptions.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-          </select>
-        </Field>
-        <Field label="T-Shirt Size *">
-          <select style={s.input} value={form.tshirt_size} onChange={(e) => set("tshirt_size", e.target.value)}>
-            <option value="">—</option>
-            <option value="YXS">Youth XS</option><option value="YS">Youth S</option><option value="YM">Youth M</option>
-            <option value="YL">Youth L</option><option value="YXL">Youth XL</option>
-            <option value="AS">Adult S</option><option value="AM">Adult M</option><option value="AL">Adult L</option><option value="AXL">Adult XL</option>
           </select>
         </Field>
       </div>
