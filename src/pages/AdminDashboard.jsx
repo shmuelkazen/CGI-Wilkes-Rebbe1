@@ -478,7 +478,9 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
                   <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
                     {kidRegs.map((r) => {
                       const wk = weekMap[r.week_id];
-                      return <span key={r.id} style={{ ...s.badge(colors.forest), fontSize: 10 }}>{wk?.name || "Week"} · ${(r.price_cents / 100).toFixed(0)}</span>;
+                      const statusColor = r.status === "waitlisted" ? colors.amber : r.status === "confirmed" ? colors.success : colors.forest;
+                      const statusLabel = r.status === "waitlisted" ? " ⏳" : r.status === "confirmed" ? " ✓" : "";
+                      return <span key={r.id} style={{ ...s.badge(statusColor), fontSize: 10 }}>{wk?.name || "Week"} · ${(r.price_cents / 100).toFixed(0)}{statusLabel}</span>;
                     })}
                   </div>
                 )}

@@ -142,11 +142,11 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
       return false;
     }
     if (form.receives_services === "") {
-      alert("Please indicate whether your child receives any support or services.");
+      alert("Please indicate whether your child receives any behavioral or support services.");
       return false;
     }
     if (form.receives_services === "yes" && !form.services_description.trim()) {
-      alert("Please describe the support or services your child receives.");
+      alert("Please describe the services your child receives.");
       return false;
     }
     return true;
@@ -167,7 +167,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
       has_medications: form.has_medications === "yes",
       medications: form.has_medications === "yes" ? form.medications.trim() : "",
       receives_services: form.receives_services === "yes" ? true : form.receives_services === "no" ? false : null,
-      services_description: form.receives_services === "yes" ? (form.services_description || "").trim() : null,
+      services_description: form.receives_services === "yes" ? (form.services_description || "").trim() : form.receives_services === "in_progress" ? "Currently setting up behavioral services — will update the camp." : null,
       additional_notes: (form.additional_notes || "").trim() || null,
       photo_release: true,
     };
@@ -300,19 +300,25 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
           </Field>
         )}
 
-        {/* Services / Support */}
+        {/* Behavioral Services / Support */}
         <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0 12px", paddingTop: 16 }}>
-          <Field label="Does your child receive any support or services? *">
+          <Field label="Does your child receive any behavioral or support services? *">
             <select style={s.input} value={form.receives_services} onChange={(e) => set("receives_services", e.target.value)}>
               <option value="">—</option>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="no">My child does NOT receive services and does not require behavioral accommodations</option>
+              <option value="yes">My child receives services during the school year and will continue to receive them over the summer</option>
+              <option value="in_progress">We are currently in the process of setting up behavioral services and will update the camp</option>
             </select>
           </Field>
           {form.receives_services === "yes" && (
-            <Field label="Please describe *">
+            <Field label="Please describe the services your child receives *">
               <textarea style={{ ...s.input, minHeight: 60 }} value={form.services_description} onChange={(e) => set("services_description", e.target.value)} placeholder="Describe the support or services your child receives…" />
             </Field>
+          )}
+          {form.receives_services !== "" && form.receives_services !== "no" && (
+            <div style={{ background: colors.amberLight, border: `1px solid ${colors.amber}`, borderRadius: 8, padding: 10, fontSize: 12, color: colors.textMid, marginTop: 8 }}>
+              If your child receives services during the school year, you will be required to maintain those services over the summer program in order for your child to attend camp. Failure to disclose this information may affect your child's ability to attend.
+            </div>
           )}
         </div>
 
@@ -341,7 +347,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
 // ============================================================
 // REGISTER FOR DIVISION WEEKS MODAL
 // ============================================================
-export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings, siblingCount, parent, onClose, onRegister, saving }) => {
+export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings, siblingCount, parent, onClose, onRegister, saving, isAdmin }) => {
   const division = divisions.find((d) => d.id === child.assigned_division_id);
   const divisionWeeks = (weeks || [])
     .filter((w) => w.division_id === child.assigned_division_id && w.active)
@@ -356,6 +362,10 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
   const [discountError, setDiscountError] = useState("");
   const [checkingCode, setCheckingCode] = useState(false);
   const [enrollment, setEnrollment] = useState([]); // week enrollment counts
+  const [step, setStep] = useState("select"); // "select" or "confirm"
+  const [policies, setPolicies] = useState({ swimming: false, trips: false, medical: false, cancellation: false });
+  const [savingPolicies, setSavingPolicies] = useState(false);
+  const allPoliciesChecked = isAdmin || (policies.swimming && policies.trips && policies.medical && policies.cancellation);
 
   const isElrc = parent?.elrc_status === true;
 
@@ -549,20 +559,22 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
     ? division.elrc_weekly_price : division.per_week_price;
 
   return (
-    <Modal title={`Register ${child.first_name} — ${division.name}`} onClose={onClose} width={560}>
-      <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 6 }}>
-        ${(displayPrice / 100).toFixed(0)}/week
-        {isElrc && <span style={{ color: colors.success, fontWeight: 600 }}> (ELRC Rate)</span>}
-      </div>
-
-      {/* Early bird notice */}
-      {isBeforeEarlyBird && earlyBirdDeadline && (
-        <div style={{ background: colors.forestPale, border: `1px solid ${colors.success}`, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
-          {Icons.dollar({ size: 14, color: colors.success })} <strong>Early Bird:</strong> Save ${(earlyBirdPerWeek / 100).toFixed(0)}/week on full weeks when paid in full by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+    <Modal title={step === "confirm" ? `Confirm — ${child.first_name}` : `Register ${child.first_name} — ${division.name}`} onClose={onClose} width={560}>
+      {step === "select" && (
+        <>
+        <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 6 }}>
+          ${(displayPrice / 100).toFixed(0)}/week
+          {isElrc && <span style={{ color: colors.success, fontWeight: 600 }}> (ELRC Rate)</span>}
         </div>
-      )}
 
-      {availableWeeks.length === 0 ? (
+        {/* Early bird notice */}
+        {isBeforeEarlyBird && earlyBirdDeadline && (
+          <div style={{ background: colors.forestPale, border: `1px solid ${colors.success}`, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
+            {Icons.dollar({ size: 14, color: colors.success })} <strong>Early Bird:</strong> Save ${(earlyBirdPerWeek / 100).toFixed(0)}/week on full weeks when paid in full by {earlyBirdDeadline.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+          </div>
+        )}
+
+        {availableWeeks.length === 0 ? (
         <div style={{ padding: "24px 0", textAlign: "center" }}>
           <p style={{ fontSize: 14, color: colors.textMid }}>{child.first_name} is already registered for all available weeks!</p>
           <button onClick={onClose} style={{ ...s.btn("primary"), marginTop: 12 }}>Done</button>
@@ -688,6 +700,143 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
             <button
               onClick={() => {
                 if (selected.size === 0) return alert("Select at least one week.");
+                if (isAdmin) {
+                  // Admin bypasses confirmation — register directly
+                  const weekRegs = confirmedWeeks.map((w) => ({
+                    week_id: w.id,
+                    division_id: child.assigned_division_id,
+                    price_cents: isBeforeEarlyBird ? calcWeekPriceWithEarlyBird(w) : calcWeekPriceRegular(w),
+                  }));
+                  const waitlistRegs = waitlistedWeeks.map((w) => ({
+                    week_id: w.id,
+                    division_id: child.assigned_division_id,
+                    price_cents: isBeforeEarlyBird ? calcWeekPriceWithEarlyBird(w) : calcWeekPriceRegular(w),
+                  }));
+                  onRegister({
+                    child_id: child.id,
+                    weeks: weekRegs,
+                    waitlist_weeks: waitlistRegs,
+                    subtotal_cents: subtotal,
+                    discount_cents: subtotal - (isBeforeEarlyBird ? finalEarlyBird : finalRegular),
+                    total_cents: isBeforeEarlyBird ? finalEarlyBird : finalRegular,
+                    discount_code_id: appliedDiscount?.id || null,
+                  });
+                } else {
+                  setStep("confirm");
+                }
+              }}
+              disabled={saving || selected.size === 0}
+              style={{ ...s.btn("primary"), opacity: selected.size > 0 ? 1 : 0.5 }}
+            >
+              {saving ? <Spinner size={16} /> : (
+                isAdmin
+                  ? (waitlistedWeeks.length > 0 && confirmedWeeks.length === 0
+                      ? `Waitlist ${waitlistedWeeks.length} Week${waitlistedWeeks.length !== 1 ? "s" : ""}`
+                      : waitlistedWeeks.length > 0
+                        ? `Register ${confirmedWeeks.length} + Waitlist ${waitlistedWeeks.length}`
+                        : `Register for ${selected.size} Week${selected.size !== 1 ? "s" : ""}`)
+                  : "Review & Confirm"
+              )}
+            </button>
+          </div>
+        </>
+      )}
+      </>
+      )}
+
+      {/* ═══ CONFIRMATION STEP (parent only) ═══ */}
+      {step === "confirm" && !isAdmin && (
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <button onClick={() => setStep("select")} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 13, color: colors.textMid, marginBottom: 8 }}>
+              ← Back to week selection
+            </button>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Please review and confirm</div>
+
+            {/* Summary */}
+            <div style={{ ...s.card, background: colors.forestPale, marginBottom: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{child.first_name} — {division.name}</div>
+              {confirmedWeeks.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  {confirmedWeeks.map((w) => (
+                    <div key={w.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
+                      <span>{w.name} ({fmtDate(w.start_date)} – {fmtDate(w.end_date)})</span>
+                      <span>${((isBeforeEarlyBird ? calcWeekPriceWithEarlyBird(w) : calcWeekPriceRegular(w)) / 100).toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {waitlistedWeeks.length > 0 && (
+                <div style={{ padding: "6px 8px", background: colors.amberLight, borderRadius: 6, marginBottom: 8 }}>
+                  {waitlistedWeeks.map((w) => (
+                    <div key={w.id} style={{ fontSize: 13, color: colors.amber, padding: "2px 0" }}>
+                      ⏳ {w.name} — waitlisted (no charge until approved)
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(siblingTotal > 0 || (isBeforeEarlyBird && earlyBirdTotal > 0) || codeDiscount > 0) && (
+                <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 6, marginBottom: 4 }}>
+                  {siblingTotal > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success }}><span>Sibling discount</span><span>−${(siblingTotal / 100).toFixed(2)}</span></div>}
+                  {isBeforeEarlyBird && earlyBirdTotal > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success }}><span>Early bird discount</span><span>−${(earlyBirdTotal / 100).toFixed(2)}</span></div>}
+                  {codeDiscount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success }}><span>Code: {appliedDiscount.code}</span><span>−${(codeDiscount / 100).toFixed(2)}</span></div>}
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${colors.border}`, paddingTop: 8, marginTop: 4, fontFamily: font.display, fontSize: 20 }}>
+                <span>Total</span>
+                <span style={{ color: colors.forest }}>${((isBeforeEarlyBird ? finalEarlyBird : finalRegular) / 100).toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Important notice */}
+            <div style={{ background: colors.amberLight, border: `1px solid ${colors.amber}`, borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
+              {Icons.alertCircle({ size: 14, color: colors.amber })} <strong>Important:</strong> Once confirmed, weeks cannot be removed. You can add more weeks later. To remove a week after confirmation, please contact the camp office.
+            </div>
+
+            {/* Policy checkboxes */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Terms & Conditions</div>
+              <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 10 }}>
+                Please review and accept each policy. <a href="https://cgikingston.com/terms-%26-conditions" target="_blank" rel="noopener noreferrer" style={{ color: colors.forest, textDecoration: "underline" }}>Read full terms</a>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {[
+                  { key: "swimming", label: "I agree to the Swimming & Water Activity Waiver" },
+                  { key: "trips", label: "I agree to the Trips & Off-Site Activity Waiver" },
+                  { key: "medical", label: "I agree to the Medical Authorization & Sunscreen Permission" },
+                  { key: "cancellation", label: "I acknowledge the Cancellation & Refund Policy" },
+                ].map((p) => (
+                  <label key={p.key} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "8px 10px", background: policies[p.key] ? colors.forestPale : colors.bg, borderRadius: 8, border: `1px solid ${policies[p.key] ? colors.success : colors.borderLight}`, transition: "all .15s" }}>
+                    <input type="checkbox" checked={policies[p.key]} onChange={(e) => setPolicies({ ...policies, [p.key]: e.target.checked })} style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13 }}>{p.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <button onClick={() => setStep("select")} style={s.btn("secondary")}>Back</button>
+            <button
+              onClick={async () => {
+                if (!allPoliciesChecked) return alert("Please accept all terms and conditions to continue.");
+                setSavingPolicies(true);
+                try {
+                  // Save policy acceptances
+                  const policyTypes = ["swimming_waiver", "trips_waiver", "medical_authorization", "cancellation_policy"];
+                  for (const pType of policyTypes) {
+                    await sb.query("policy_acceptances", {
+                      method: "POST",
+                      body: { parent_id: parent?.id, child_id: child.id, policy_type: pType },
+                      headers: { Prefer: "return=minimal" },
+                    });
+                  }
+                } catch (e) {
+                  console.warn("Policy acceptance save error:", e.message);
+                }
+                setSavingPolicies(false);
+
+                // Now register
                 const weekRegs = confirmedWeeks.map((w) => ({
                   week_id: w.id,
                   division_id: child.assigned_division_id,
@@ -708,19 +857,19 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
                   discount_code_id: appliedDiscount?.id || null,
                 });
               }}
-              disabled={saving || selected.size === 0}
-              style={{ ...s.btn("primary"), opacity: selected.size > 0 ? 1 : 0.5 }}
+              disabled={saving || savingPolicies || !allPoliciesChecked}
+              style={{ ...s.btn("primary"), opacity: allPoliciesChecked ? 1 : 0.5 }}
             >
-              {saving ? <Spinner size={16} /> : (
+              {saving || savingPolicies ? <Spinner size={16} /> : (
                 waitlistedWeeks.length > 0 && confirmedWeeks.length === 0
-                  ? `Waitlist ${waitlistedWeeks.length} Week${waitlistedWeeks.length !== 1 ? "s" : ""}`
+                  ? `Confirm Waitlist — ${waitlistedWeeks.length} Week${waitlistedWeeks.length !== 1 ? "s" : ""}`
                   : waitlistedWeeks.length > 0
-                    ? `Register ${confirmedWeeks.length} + Waitlist ${waitlistedWeeks.length}`
-                    : `Register for ${selected.size} Week${selected.size !== 1 ? "s" : ""}`
+                    ? `Confirm ${confirmedWeeks.length} + Waitlist ${waitlistedWeeks.length}`
+                    : `Confirm Registration — ${confirmedWeeks.length} Week${confirmedWeeks.length !== 1 ? "s" : ""}`
               )}
             </button>
           </div>
-        </>
+        </div>
       )}
     </Modal>
   );

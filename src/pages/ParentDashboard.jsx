@@ -457,44 +457,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
     }
   };
 
-  // ── Remove a week registration ──
-  const handleRemoveWeek = async (reg) => {
-    const week = weeks.find((w) => w.id === reg.week_id);
-    const child = children.find((c) => c.id === reg.child_id);
-    const weekLabel = week?.name || "this week";
-    const childLabel = child ? `${child.first_name}` : "this child";
-    const isWaitlisted = reg.status === "waitlisted";
-    const confirmMsg = isWaitlisted
-      ? `Remove ${childLabel} from the ${weekLabel} waitlist?`
-      : `Remove ${childLabel} from ${weekLabel}? This will reduce your balance by $${(reg.price_cents / 100).toFixed(0)}.`;
-    if (!window.confirm(confirmMsg)) return;
-
-    try {
-      await sb.query("registrations", {
-        method: "DELETE",
-        filters: `&id=eq.${reg.id}`,
-      });
-
-      // Only adjust ledger for non-waitlisted registrations
-      if (!isWaitlisted && ledger) {
-        const newDue = Math.max(0, (Number(ledger.total_due_cents) || 0) - (Number(reg.price_cents) || 0));
-        await sb.query("family_ledger", {
-          method: "PATCH",
-          body: {
-            total_due_cents: newDue,
-            updated_at: new Date().toISOString(),
-          },
-          filters: `&parent_id=eq.${user.id}`,
-          headers: { Prefer: "return=minimal" },
-        });
-      }
-
-      showToast(isWaitlisted ? `Removed ${childLabel} from ${weekLabel} waitlist.` : `Removed ${childLabel} from ${weekLabel}.`);
-      load();
-    } catch (e) {
-      alert("Error removing week: " + e.message);
-    }
-  };
+  // Week removal is disabled on parent side — changes go through the camp office
 
   // Registration fee handlers
   const regFeeRequired = settings?.registration_fee_required === true;
@@ -902,43 +865,64 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                 const regs = childRegs(child.id);
                 const age = calcAge(child.date_of_birth);
                 const div = divisionById(child.assigned_division_id);
-                const canRemoveWeeks = true;
+                const hasRegs = regs.length > 0;
+                const divWeeks = weeks.filter((w) => w.division_id === child.assigned_division_id && w.active);
+                const unregisteredWeeks = divWeeks.filter((w) => !regs.some((r) => r.week_id === w.id));
+                const hasUnregisteredWeeks = unregisteredWeeks.length > 0;
+
+                // Family-level payment status
+                const familyPaid = ledger && (ledger.total_due_cents - ledger.total_paid_cents) <= 0 && !ledger.balance_cleared;
+                const familyCleared = ledger?.balance_cleared === true;
+                const isPaidUp = familyPaid || familyCleared;
+
                 return (
-                  <div key={child.id} style={{ ...s.card, animation: `slideIn .3s ease ${i * .05}s both`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>{child.first_name} {child.last_name}</div>
-                      <div style={{ fontSize: 13, color: colors.textMid }}>
-                        {age !== null ? `Age ${age}` : ""}
-                        {child.grade != null ? ` · ${child.grade === 0 ? "K" : child.grade === -1 ? "Pre-K" : child.grade < -1 ? ["","","","Pre Nursery","Toddler"][Math.abs(child.grade)] || "" : `Grade ${child.grade}`}` : ""}
-                        {div ? ` · ${div.name}` : ""}
-                      </div>
-                      {regs.length > 0 && (
-                        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                          {regs.map((r) => {
-                            const week = weekById(r.week_id);
-                            const isWaitlisted = r.status === "waitlisted";
-                            return (
-                              <span key={r.id} style={{ ...s.badge(isWaitlisted ? colors.amber : colors.forest), fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                {isWaitlisted && "⏳ "}{week?.name || "Week"}{isWaitlisted && " (waitlist)"}
-                                {canRemoveWeeks && (
-                                  <span
-                                    onClick={(e) => { e.stopPropagation(); handleRemoveWeek(r); }}
-                                    style={{ cursor: "pointer", marginLeft: 2, fontSize: 13, lineHeight: 1, color: "inherit", opacity: 0.7, fontWeight: 700 }}
-                                    title={isWaitlisted ? "Remove from waitlist" : "Remove this week"}
-                                  >✕</span>
-                                )}
-                              </span>
-                            );
-                          })}
+                  <div key={child.id} style={{ ...s.card, animation: `slideIn .3s ease ${i * .05}s both` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>{child.first_name} {child.last_name}</div>
+                        <div style={{ fontSize: 13, color: colors.textMid }}>
+                          {age !== null ? `Age ${age}` : ""}
+                          {child.grade != null ? ` · ${child.grade === 0 ? "K" : child.grade === -1 ? "Pre-K" : child.grade < -1 ? ["","","","Pre Nursery","Toddler"][Math.abs(child.grade)] || "" : `Grade ${child.grade}`}` : ""}
+                          {div ? ` · ${div.name}` : ""}
                         </div>
+
+                        {/* Registered weeks — read-only display */}
+                        {hasRegs && (
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: isPaidUp ? colors.success : colors.amber, marginBottom: 6 }}>
+                              {isPaidUp ? `${child.first_name} is registered & paid` : `${child.first_name} is registered — balance due`}
+                            </div>
+                            <div style={{ display: "grid", gap: 4 }}>
+                              {regs.map((r) => {
+                                const week = weekById(r.week_id);
+                                const isWaitlisted = r.status === "waitlisted";
+                                return (
+                                  <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", background: isWaitlisted ? colors.amberLight : colors.forestPale, borderRadius: 6, fontSize: 13 }}>
+                                    <span style={{ color: isWaitlisted ? colors.amber : colors.success, fontSize: 14 }}>{isWaitlisted ? "⏳" : "✓"}</span>
+                                    <span style={{ fontWeight: 500 }}>{week?.name || "Week"}</span>
+                                    <span style={{ color: colors.textMid, fontSize: 12 }}>{fmtDate(week?.start_date)} – {fmtDate(week?.end_date)}</span>
+                                    {isWaitlisted && <span style={{ ...s.badge(colors.amber), fontSize: 10, marginLeft: "auto" }}>Waitlisted</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div style={{ fontSize: 12, color: colors.textLight, marginTop: 6, fontStyle: "italic" }}>
+                              To make changes, please contact the camp office.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Show register/add weeks button only if there are unregistered weeks */}
+                      {hasUnregisteredWeeks && (
+                        <button
+                          onClick={() => { if (!canRegister) return alert(showRegFeeGate ? "Please pay the registration fee first." : "Please complete your address first."); setSelectedChild(child); setModal("register"); }}
+                          style={{ ...s.btn("secondary"), opacity: canRegister ? 1 : 0.5, alignSelf: "flex-start" }}
+                        >
+                          {Icons.calendar({ size: 14 })} {hasRegs ? "Add Weeks" : `Register for ${div ? div.name : "Camp"}`}
+                        </button>
                       )}
                     </div>
-                    <button
-                      onClick={() => { if (!canRegister) return alert(showRegFeeGate ? "Please pay the registration fee first." : "Please complete your address first."); setSelectedChild(child); setModal("register"); }}
-                      style={{ ...s.btn("secondary"), opacity: canRegister ? 1 : 0.5 }}
-                    >
-                      {Icons.calendar({ size: 14 })} Register for {div ? div.name : "Camp"}
-                    </button>
                   </div>
                 );
               })}
