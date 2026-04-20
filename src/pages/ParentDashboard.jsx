@@ -718,12 +718,12 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                 <div key={cb.childId} style={{ marginBottom: 8 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0" }}>
                     <span>{cb.childName} — {cb.division}{cb.isElrc ? " (ELRC)" : ""}</span>
-                    <span>${(cb.subtotal / 100).toFixed(2)}</span>
+                    <span>${(cb.charges / 100).toFixed(2)}</span>
                   </div>
                   {cb.weeks.map((w) => (
                     <div key={w.registrationId} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: colors.textLight, padding: "1px 0 1px 12px" }}>
                       <span>{w.weekName}{w.isPartial ? " (partial)" : ""}</span>
-                      <span>${(w.total / 100).toFixed(2)}</span>
+                      <span>${(w.basePrice / 100).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
