@@ -15,6 +15,7 @@ function fmtDate(dateStr, opts) {
 }
 
 const PRESCHOOL_CLASSES = [
+  { value: "-5", label: "Infants" },
   { value: "-4", label: "Toddler" },
   { value: "-3", label: "Pre Nursery" },
   { value: "-2", label: "Nursery" },
@@ -752,29 +753,106 @@ export default function AdminDashboard({ user, setView, showToast }) {
     const child = childMap[reg.child_id];
     const wk = weekMap[reg.week_id];
     const label = `${child?.first_name || "?"} — ${wk?.name || "?"}`;
-    if (!window.confirm(`Remove registration: ${label}? This will delete the row and adjust the family balance.`)) return;
+    const isWaitlisted = reg.status === "waitlisted";
+    const confirmMsg = isWaitlisted
+      ? `Remove ${label} from the waitlist?`
+      : `Remove registration: ${label}? This will delete the row and adjust the family balance.`;
+    if (!window.confirm(confirmMsg)) return;
     try {
       await sb.query("registrations", { method: "DELETE", filters: `&id=eq.${reg.id}` });
-      // Adjust family ledger
-      const parentId = child?.parent_id;
+      // Only adjust family ledger for non-waitlisted registrations
+      if (!isWaitlisted) {
+        const parentId = child?.parent_id;
+        if (parentId) {
+          const ledger = ledgerMap[parentId];
+          if (ledger) {
+            const newDue = Math.max(0, (Number(ledger.total_due_cents) || 0) - (Number(reg.price_cents) || 0));
+            await sb.query("family_ledger", {
+              method: "PATCH",
+              body: { total_due_cents: newDue, updated_at: new Date().toISOString() },
+              filters: `&parent_id=eq.${parentId}`,
+              headers: { Prefer: "return=minimal" },
+            });
+          }
+        }
+      }
+      showToast(isWaitlisted ? `Removed from waitlist: ${label}.` : `Removed: ${label}. Ledger adjusted.`);
+      load();
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  const handleSaveDivision = async (data) => { setSaving(true); try { if (divisionModal && divisionModal !== "create") { await sb.query("divisions", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${divisionModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Division updated!"); } else { await sb.query("divisions", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Division created!"); } setDivisionModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
+
+  // ── Approve a waitlisted registration ──
+  const handleApproveWaitlist = async (reg) => {
+    const child = childMap[reg.child_id];
+    const wk = weekMap[reg.week_id];
+    const div = divisionMap[reg.division_id];
+    const parentId = child?.parent_id;
+    const parent = parentMap[parentId];
+    const label = `${child?.first_name || "?"} — ${wk?.name || "?"}`;
+
+    if (!window.confirm(`Approve ${label} from the waitlist?\n\nThis will:\n• Move status to "pending"\n• Add $${(reg.price_cents / 100).toFixed(0)} to the family balance\n• Send an email notification to the parent`)) return;
+
+    setSaving(true);
+    try {
+      // Change status from waitlisted → pending
+      await sb.query("registrations", {
+        method: "PATCH",
+        body: { status: "pending", waitlist_position: null, updated_at: new Date().toISOString() },
+        filters: `&id=eq.${reg.id}`,
+        headers: { Prefer: "return=minimal" },
+      });
+
+      // Add price to family ledger
       if (parentId) {
         const ledger = ledgerMap[parentId];
         if (ledger) {
-          const newDue = Math.max(0, (Number(ledger.total_due_cents) || 0) - (Number(reg.price_cents) || 0));
+          const newDue = (Number(ledger.total_due_cents) || 0) + (Number(reg.price_cents) || 0);
           await sb.query("family_ledger", {
             method: "PATCH",
             body: { total_due_cents: newDue, updated_at: new Date().toISOString() },
             filters: `&parent_id=eq.${parentId}`,
             headers: { Prefer: "return=minimal" },
           });
+        } else {
+          await sb.query("family_ledger", {
+            method: "POST",
+            body: { parent_id: parentId, total_due_cents: Number(reg.price_cents) || 0, total_paid_cents: 0, discount_amount_cents: 0 },
+            headers: { Prefer: "return=minimal" },
+          });
         }
       }
-      showToast(`Removed: ${label}. Ledger adjusted.`);
-      load();
-    } catch (e) { alert("Error: " + e.message); }
-  };
 
-  const handleSaveDivision = async (data) => { setSaving(true); try { if (divisionModal && divisionModal !== "create") { await sb.query("divisions", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${divisionModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Division updated!"); } else { await sb.query("divisions", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Division created!"); } setDivisionModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
+      // Send approval email
+      const PRESCHOOL_GRADES = { "-5": "Infants", "-4": "Toddler", "-3": "Pre Nursery", "-2": "Nursery", "-1": "Pre K" };
+      const className = PRESCHOOL_GRADES[String(child?.grade)] || "";
+      try {
+        await fetch("/.netlify/functions/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "waitlist_approved",
+            data: {
+              parentId,
+              parentEmail: parent?.email,
+              parentName: parent?.full_name || "Camp Family",
+              childName: `${child?.first_name} ${child?.last_name}`,
+              className,
+              divisionName: div?.name || "Preschool",
+              weekName: wk?.name || "Week",
+              priceCents: reg.price_cents,
+            },
+          }),
+        });
+      } catch (e) { console.warn("Approval email failed:", e.message); }
+
+      showToast(`Approved: ${label}. Email sent to ${parent?.email || "parent"}.`);
+      load();
+    } catch (e) {
+      alert("Error approving: " + e.message);
+    } finally { setSaving(false); }
+  };
   const handleDeleteDivision = async (div) => { const weekCount = weeks.filter((w) => w.division_id === div.id).length; if (!window.confirm(`Delete "${div.name}"${weekCount ? ` and its ${weekCount} weeks` : ""}? This cannot be undone.`)) return; try { await sb.query("divisions", { method: "DELETE", filters: `&id=eq.${div.id}` }); showToast("Division deleted."); load(); } catch (e) { alert("Error: " + e.message); } };
   const handleSaveWeek = async (data) => { setSaving(true); try { if (weekModal && weekModal !== "create") { await sb.query("division_weeks", { method: "PATCH", body: data, filters: `&id=eq.${weekModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Week updated!"); } else { await sb.query("division_weeks", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Week added!"); } setWeekModal(null); setWeekModalDivision(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
   const handleDeleteWeek = async (wk) => { if (!window.confirm(`Delete "${wk.name}"? This cannot be undone.`)) return; try { await sb.query("division_weeks", { method: "DELETE", filters: `&id=eq.${wk.id}` }); showToast("Week deleted."); load(); } catch (e) { alert("Error: " + e.message); } };
@@ -845,6 +923,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const totalRegs = registrations.length;
   const totalPending = registrations.filter((r) => r.status === "pending").length;
   const totalConfirmed = registrations.filter((r) => r.status === "confirmed").length;
+  const totalWaitlisted = registrations.filter((r) => r.status === "waitlisted").length;
   const totalRevenue = ledgers.reduce((sum, l) => sum + (l.total_paid_cents || 0), 0);
   const campName = settings.camp_name || "CGI Wilkes Rebbe";
 
@@ -856,10 +935,11 @@ export default function AdminDashboard({ user, setView, showToast }) {
       </header>
 
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 28 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 28 }}>
           <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Total Registrations</div><div style={{ fontFamily: font.display, fontSize: 28 }}>{totalRegs}</div></div>
           <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Confirmed</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.success }}>{totalConfirmed}</div></div>
           <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Pending</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>{totalPending}</div></div>
+          {totalWaitlisted > 0 && <div style={{ ...s.card, border: `1px solid ${colors.amber}` }}><div style={{ fontSize: 12, color: colors.amber, fontWeight: 600, marginBottom: 4 }}>⏳ Waitlisted</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>{totalWaitlisted}</div></div>}
           <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Revenue (Collected)</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.forest }}>${(totalRevenue / 100).toLocaleString()}</div></div>
         </div>
 
@@ -890,7 +970,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                     <td style={{ padding: "10px 14px" }}><StatusBadge status={r.status} /></td>
                     <td style={{ padding: "10px 14px", fontSize: 13 }}>${(r.price_cents / 100).toFixed(0)}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, color: colors.textMid }}>{new Date(r.created_at).toLocaleDateString()}</td>
-                    <td style={{ padding: "10px 14px" }}><button onClick={() => deleteRegistration(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.x({ size: 13, color: colors.coral })} Remove</button></td>
+                    <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}>{r.status === "waitlisted" && (<button onClick={() => handleApproveWaitlist(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Approve</button>)}<button onClick={() => deleteRegistration(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.x({ size: 13, color: colors.coral })} Remove</button></div></td>
                   </tr>); })}</tbody>
               </table>
             )}

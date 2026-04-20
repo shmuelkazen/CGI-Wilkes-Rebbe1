@@ -360,6 +360,81 @@ function shirtOrderReceiptEmail({ parentName, amountCents, items }) {
   };
 }
 
+// ── Waitlist Confirmation (sent to parent when child lands on waitlist) ──
+function waitlistConfirmationEmail({ parentName, childName, className, divisionName, weeks }) {
+  const weekList = (weeks || []).map((w) => `<li style="padding:4px 0; color:#374737; font-size:14px;">${w}</li>`).join("");
+
+  const body = `
+    <h2 ${styles.heading}>Waitlist Confirmation</h2>
+    <p ${styles.text}>Hi ${parentName},</p>
+    <p ${styles.text}>Thank you for your interest in ${CAMP_NAME}! The <strong>${className}</strong> class in <strong>${divisionName}</strong> is currently at capacity for the following week${weeks.length !== 1 ? "s" : ""}:</p>
+    <ul style="margin:12px 0 12px 20px; padding:0;">${weekList}</ul>
+    <p ${styles.text}><strong>${childName}</strong> has been placed on the waitlist. We will notify you by email as soon as a spot becomes available.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
+      <tr>
+        <td style="padding:12px 16px; background-color:#fff8e1; border-radius:8px; border: 1px solid #ffe082;">
+          <p style="margin:0; color:#8a6d00; font-size:14px;">
+            <strong>No payment is required at this time.</strong> You will only be asked to pay once a spot is confirmed.
+          </p>
+        </td>
+      </tr>
+    </table>
+    <p ${styles.muted}>If you have any questions, reply to this email and we'll get back to you.</p>
+  `;
+
+  return {
+    subject: `${CAMP_NAME} — Waitlist Confirmation: ${childName}`,
+    html: wrapEmail(body),
+  };
+}
+
+// ── Waitlist Approved (sent to parent when admin approves from waitlist) ──
+function waitlistApprovedEmail({ parentName, childName, className, divisionName, weekName, priceCents }) {
+  const body = `
+    <h2 ${styles.heading}>A Spot Has Opened!</h2>
+    <p ${styles.text}>Hi ${parentName},</p>
+    <p ${styles.text}>Great news! A spot has become available for <strong>${childName}</strong> in the <strong>${className}</strong> class.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
+      <tr>
+        <td style="padding:16px; background-color:#e6f4ea; border-radius:8px; border: 1px solid #c8e6c9;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="color:#1a5c2e; font-size:14px; padding:4px 0;"><strong>Camper:</strong></td>
+              <td style="color:#1a5c2e; font-size:14px; text-align:right;">${childName}</td>
+            </tr>
+            <tr>
+              <td style="color:#374737; font-size:14px; padding:4px 0;"><strong>Division:</strong></td>
+              <td style="color:#374737; font-size:14px; text-align:right;">${divisionName}</td>
+            </tr>
+            <tr>
+              <td style="color:#374737; font-size:14px; padding:4px 0;"><strong>Class:</strong></td>
+              <td style="color:#374737; font-size:14px; text-align:right;">${className}</td>
+            </tr>
+            <tr>
+              <td style="color:#374737; font-size:14px; padding:4px 0;"><strong>Week:</strong></td>
+              <td style="color:#374737; font-size:14px; text-align:right;">${weekName}</td>
+            </tr>
+            ${priceCents ? `<tr>
+              <td style="color:#374737; font-size:14px; padding:4px 0;"><strong>Amount Due:</strong></td>
+              <td style="color:#1a5c2e; font-size:14px; font-weight:700; text-align:right;">${formatCents(priceCents)}</td>
+            </tr>` : ""}
+          </table>
+        </td>
+      </tr>
+    </table>
+    <p ${styles.text}>Please log in to complete your payment and secure this spot:</p>
+    <p style="text-align:center;">
+      <a href="${SITE_URL}" ${styles.button}>Complete Payment &rarr;</a>
+    </p>
+    <p ${styles.muted}>If you have any questions, reply to this email.</p>
+  `;
+
+  return {
+    subject: `${CAMP_NAME} — Spot Available for ${childName}!`,
+    html: wrapEmail(body),
+  };
+}
+
 module.exports = {
   sendEmail,
   wrapEmail,
@@ -370,6 +445,8 @@ module.exports = {
   registrationFeeReceiptEmail,
   statusChangeEmail,
   shirtOrderReceiptEmail,
+  waitlistConfirmationEmail,
+  waitlistApprovedEmail,
   CAMP_NAME,
   SITE_URL,
 };

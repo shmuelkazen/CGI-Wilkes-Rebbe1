@@ -17,6 +17,7 @@ function fmtDate(dateStr, opts) {
 
 // Grade/class options by division type
 const PRESCHOOL_CLASSES = [
+  { value: "-5", label: "Infants" },
   { value: "-4", label: "Toddler" },
   { value: "-3", label: "Pre Nursery" },
   { value: "-2", label: "Nursery" },
@@ -452,22 +453,33 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
     return Math.max(floor, price - discount);
   };
 
-  // ─── Totals ───
+  // ─── Totals (split confirmed vs waitlisted) ───
   const selectedWeeks = [...selected].map((wid) => divisionWeeks.find((w) => w.id === wid)).filter(Boolean);
-  const subtotal = selectedWeeks.reduce((sum, w) => sum + getBasePrice(w), 0);
-  const totalEarlyBird = selectedWeeks.reduce((sum, w) => sum + calcWeekPriceWithEarlyBird(w), 0);
-  const totalRegular = selectedWeeks.reduce((sum, w) => sum + calcWeekPriceRegular(w), 0);
+
+  // Determine which selected weeks are waitlisted (preschool class full)
+  const isWeekWaitlisted = (w) => {
+    const cap = getWeekClassEnrollment(w.id);
+    return cap && cap.remaining <= 0;
+  };
+  const confirmedWeeks = selectedWeeks.filter((w) => !isWeekWaitlisted(w));
+  const waitlistedWeeks = selectedWeeks.filter((w) => isWeekWaitlisted(w));
+  const waitlistedWeekIds = new Set(waitlistedWeeks.map((w) => w.id));
+
+  // Only confirmed weeks contribute to pricing
+  const subtotal = confirmedWeeks.reduce((sum, w) => sum + getBasePrice(w), 0);
+  const totalEarlyBird = confirmedWeeks.reduce((sum, w) => sum + calcWeekPriceWithEarlyBird(w), 0);
+  const totalRegular = confirmedWeeks.reduce((sum, w) => sum + calcWeekPriceRegular(w), 0);
 
   // Discount breakdowns for display
-  const earlyBirdTotal = selectedWeeks.reduce((sum, w) => sum + getEarlyBirdDiscount(w), 0);
-  const siblingTotal = selectedWeeks.reduce((sum, w) => sum + getSiblingDiscount(w), 0);
+  const earlyBirdTotal = confirmedWeeks.reduce((sum, w) => sum + getEarlyBirdDiscount(w), 0);
+  const siblingTotal = confirmedWeeks.reduce((sum, w) => sum + getSiblingDiscount(w), 0);
 
-  // Code discount (applied on top)
+  // Code discount (applied on top — only to confirmed weeks)
   let codeDiscount = 0;
   if (appliedDiscount) {
     if (appliedDiscount.discount_type === "percent") codeDiscount = Math.round(totalRegular * appliedDiscount.discount_value / 100);
     else if (appliedDiscount.discount_type === "fixed") codeDiscount = appliedDiscount.discount_value;
-    else if (appliedDiscount.discount_type === "per_week") codeDiscount = appliedDiscount.discount_value * selected.size;
+    else if (appliedDiscount.discount_type === "per_week") codeDiscount = appliedDiscount.discount_value * confirmedWeeks.length;
   }
 
   // Final totals after code discount
@@ -561,10 +573,7 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 14, fontWeight: 700 }}>Select Weeks</span>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setSelected(new Set(availableWeeks.filter((w) => {
-                const cap = getWeekClassEnrollment(w.id);
-                return !cap || cap.remaining > 0;
-              }).map((w) => w.id)))} style={{ ...s.btn("ghost"), fontSize: 12, padding: "4px 8px", color: colors.forest }}>All</button>
+              <button onClick={() => setSelected(new Set(availableWeeks.map((w) => w.id)))} style={{ ...s.btn("ghost"), fontSize: 12, padding: "4px 8px", color: colors.forest }}>All</button>
               <button onClick={() => setSelected(new Set())} style={{ ...s.btn("ghost"), fontSize: 12, padding: "4px 8px", color: colors.textMid }}>None</button>
             </div>
           </div>
@@ -575,36 +584,38 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
               const price = getBasePrice(w);
               const partial = isPartialWeek(w);
               const capInfo = getWeekClassEnrollment(w.id);
-              const isFull = capInfo && capInfo.remaining <= 0;
+              const isWaitlisted = capInfo && capInfo.remaining <= 0;
               return (
-                <div key={w.id} onClick={() => { if (!isFull) toggleWeek(w.id); }} style={{
-                  ...s.card, padding: 14, cursor: isFull ? "not-allowed" : "pointer",
-                  border: `2px solid ${isFull ? colors.textLight : checked ? colors.forest : colors.border}`,
-                  background: isFull ? colors.bg : checked ? colors.forestPale : colors.card,
-                  opacity: isFull ? 0.6 : 1,
+                <div key={w.id} onClick={() => toggleWeek(w.id)} style={{
+                  ...s.card, padding: 14, cursor: "pointer",
+                  border: `2px solid ${checked ? (isWaitlisted ? colors.amber : colors.forest) : colors.border}`,
+                  background: checked ? (isWaitlisted ? colors.amberLight : colors.forestPale) : colors.card,
                   transition: "all .15s",
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                      <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${isFull ? colors.textLight : checked ? colors.forest : colors.border}`, background: checked && !isFull ? colors.forest : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, transition: "all .15s" }}>
-                        {checked && !isFull && Icons.check({ size: 14, color: "#fff" })}
+                      <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${checked ? (isWaitlisted ? colors.amber : colors.forest) : colors.border}`, background: checked ? (isWaitlisted ? colors.amber : colors.forest) : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, transition: "all .15s" }}>
+                        {checked && Icons.check({ size: 14, color: "#fff" })}
                       </div>
                       <div>
                         <div style={{ fontWeight: 600, marginBottom: 2 }}>
                           {w.name}
                           {partial && <span style={{ fontSize: 11, color: colors.textLight, fontWeight: 400, marginLeft: 6 }}>(partial)</span>}
+                          {isWaitlisted && <span style={{ fontSize: 11, color: colors.amber, fontWeight: 600, marginLeft: 6 }}>⏳ Waitlist</span>}
                         </div>
                         <div style={{ fontSize: 13, color: colors.textMid }}>
                           {fmtDate(w.start_date)} – {fmtDate(w.end_date)}
                         </div>
                         {capInfo && (
-                          <div style={{ fontSize: 11, color: isFull ? colors.coral : colors.textLight, marginTop: 2 }}>
-                            {isFull ? `${childClassName} class is full` : `${capInfo.remaining} of ${capInfo.capacity} ${childClassName} spots left`}
+                          <div style={{ fontSize: 11, color: isWaitlisted ? colors.amber : colors.textLight, marginTop: 2 }}>
+                            {isWaitlisted ? `${childClassName} class is full — selecting this will add you to the waitlist` : `${capInfo.remaining} of ${capInfo.capacity} ${childClassName} spots left`}
                           </div>
                         )}
                       </div>
                     </div>
-                    <div style={{ fontFamily: font.display, fontSize: 18, color: colors.forest }}>${(price / 100).toFixed(0)}</div>
+                    <div style={{ fontFamily: font.display, fontSize: 18, color: isWaitlisted ? colors.textLight : colors.forest }}>
+                      {isWaitlisted ? "—" : `$${(price / 100).toFixed(0)}`}
+                    </div>
                   </div>
                 </div>
               );
@@ -628,10 +639,18 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
           {/* Price Breakdown */}
           {selected.size > 0 && (
             <div style={{ ...s.card, background: colors.forestPale, marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 6 }}>
-                <span>{selected.size} week{selected.size !== 1 ? "s" : ""}</span>
-                <span>${(subtotal / 100).toFixed(2)}</span>
-              </div>
+              {confirmedWeeks.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 6 }}>
+                  <span>{confirmedWeeks.length} week{confirmedWeeks.length !== 1 ? "s" : ""}</span>
+                  <span>${(subtotal / 100).toFixed(2)}</span>
+                </div>
+              )}
+              {waitlistedWeeks.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.amber, marginBottom: 6, padding: "6px 8px", background: colors.amberLight, borderRadius: 6 }}>
+                  <span>⏳ {waitlistedWeeks.length} week{waitlistedWeeks.length !== 1 ? "s" : ""} waitlisted (no charge)</span>
+                  <span>$0.00</span>
+                </div>
+              )}
               {siblingTotal > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: colors.success, marginBottom: 4 }}>
                   <span>Sibling discount</span>
@@ -669,7 +688,12 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
             <button
               onClick={() => {
                 if (selected.size === 0) return alert("Select at least one week.");
-                const weekRegs = selectedWeeks.map((w) => ({
+                const weekRegs = confirmedWeeks.map((w) => ({
+                  week_id: w.id,
+                  division_id: child.assigned_division_id,
+                  price_cents: isBeforeEarlyBird ? calcWeekPriceWithEarlyBird(w) : calcWeekPriceRegular(w),
+                }));
+                const waitlistRegs = waitlistedWeeks.map((w) => ({
                   week_id: w.id,
                   division_id: child.assigned_division_id,
                   price_cents: isBeforeEarlyBird ? calcWeekPriceWithEarlyBird(w) : calcWeekPriceRegular(w),
@@ -677,6 +701,7 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
                 onRegister({
                   child_id: child.id,
                   weeks: weekRegs,
+                  waitlist_weeks: waitlistRegs,
                   subtotal_cents: subtotal,
                   discount_cents: subtotal - (isBeforeEarlyBird ? finalEarlyBird : finalRegular),
                   total_cents: isBeforeEarlyBird ? finalEarlyBird : finalRegular,
@@ -686,7 +711,13 @@ export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings,
               disabled={saving || selected.size === 0}
               style={{ ...s.btn("primary"), opacity: selected.size > 0 ? 1 : 0.5 }}
             >
-              {saving ? <Spinner size={16} /> : `Register for ${selected.size} Week${selected.size !== 1 ? "s" : ""}`}
+              {saving ? <Spinner size={16} /> : (
+                waitlistedWeeks.length > 0 && confirmedWeeks.length === 0
+                  ? `Waitlist ${waitlistedWeeks.length} Week${waitlistedWeeks.length !== 1 ? "s" : ""}`
+                  : waitlistedWeeks.length > 0
+                    ? `Register ${confirmedWeeks.length} + Waitlist ${waitlistedWeeks.length}`
+                    : `Register for ${selected.size} Week${selected.size !== 1 ? "s" : ""}`
+              )}
             </button>
           </div>
         </>

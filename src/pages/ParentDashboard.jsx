@@ -74,17 +74,23 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       });
       setSettings(st);
 
-      // Recalculate balance on the fly
+      // Recalculate balance on the fly — exclude waitlisted
       const regs = (c && c.length > 0)
         ? (await sb.query("registrations", {
-            filters: `&child_id=in.(${(c || []).map((k) => k.id).join(",")})&status=neq.cancelled&order=created_at.asc`,
+            filters: `&child_id=in.(${(c || []).map((k) => k.id).join(",")})&status=in.(pending,confirmed)&order=created_at.asc`,
           }) || [])
         : [];
-      setRegistrations(regs);
+      // Also load waitlisted regs for display only
+      const waitlistedRegs = (c && c.length > 0)
+        ? (await sb.query("registrations", {
+            filters: `&child_id=in.(${(c || []).map((k) => k.id).join(",")})&status=eq.waitlisted&order=created_at.asc`,
+          }) || [])
+        : [];
+      setRegistrations([...regs, ...waitlistedRegs]);
 
       const calc = calculateBalance({
         children: c || [],
-        registrations: regs,
+        registrations: regs, // only pending+confirmed, not waitlisted
         divisions: divs || [],
         weeks: wks || [],
         parent: p,
@@ -184,6 +190,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const handleRegister = async (regData) => {
     setSaving(true);
     try {
+      // Create confirmed (pending) registrations
       for (const week of regData.weeks) {
         await sb.query("registrations", {
           method: "POST",
@@ -198,29 +205,49 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         });
       }
 
-      // Upsert family ledger
-      const currentDue = (ledger?.total_due_cents || 0) + regData.total_cents;
-      if (ledger) {
-        await sb.query("family_ledger", {
-          method: "PATCH",
-          body: {
-            total_due_cents: currentDue,
-            discount_amount_cents: (ledger.discount_amount_cents || 0) + regData.discount_cents,
-            updated_at: new Date().toISOString(),
-          },
-          filters: `&parent_id=eq.${user.id}`,
-          headers: { Prefer: "return=minimal" },
-        });
-      } else {
-        await sb.query("family_ledger", {
+      // Create waitlisted registrations (no ledger impact)
+      const waitlistWeeks = regData.waitlist_weeks || [];
+      for (let i = 0; i < waitlistWeeks.length; i++) {
+        const week = waitlistWeeks[i];
+        await sb.query("registrations", {
           method: "POST",
           body: {
-            parent_id: user.id,
-            total_due_cents: regData.total_cents,
-            discount_amount_cents: regData.discount_cents,
+            child_id: regData.child_id,
+            division_id: week.division_id,
+            week_id: week.week_id,
+            price_cents: week.price_cents,
+            status: "waitlisted",
+            waitlist_position: i + 1,
           },
           headers: { Prefer: "return=minimal" },
         });
+      }
+
+      // Only add confirmed weeks to the ledger
+      if (regData.weeks.length > 0) {
+        const currentDue = (ledger?.total_due_cents || 0) + regData.total_cents;
+        if (ledger) {
+          await sb.query("family_ledger", {
+            method: "PATCH",
+            body: {
+              total_due_cents: currentDue,
+              discount_amount_cents: (ledger.discount_amount_cents || 0) + regData.discount_cents,
+              updated_at: new Date().toISOString(),
+            },
+            filters: `&parent_id=eq.${user.id}`,
+            headers: { Prefer: "return=minimal" },
+          });
+        } else {
+          await sb.query("family_ledger", {
+            method: "POST",
+            body: {
+              parent_id: user.id,
+              total_due_cents: regData.total_cents,
+              discount_amount_cents: regData.discount_cents,
+            },
+            headers: { Prefer: "return=minimal" },
+          });
+        }
       }
 
       if (regData.discount_cents > 0) {
@@ -237,7 +264,44 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         });
       }
 
-      showToast(`Registered for ${regData.weeks.length} week${regData.weeks.length !== 1 ? "s" : ""}!`);
+      // Send waitlist confirmation email if any weeks were waitlisted
+      if (waitlistWeeks.length > 0) {
+        const child = children.find((c) => c.id === regData.child_id);
+        const div = divisions.find((d) => d.id === child?.assigned_division_id);
+        const PRESCHOOL_GRADES = { "-5": "Infants", "-4": "Toddler", "-3": "Pre Nursery", "-2": "Nursery", "-1": "Pre K" };
+        const className = PRESCHOOL_GRADES[String(child?.grade)] || "";
+        const waitlistWeekNames = waitlistWeeks.map((ww) => {
+          const wk = weeks.find((w) => w.id === ww.week_id);
+          return wk?.name || "Week";
+        });
+        try {
+          await fetch("/.netlify/functions/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "waitlist_confirmation",
+              data: {
+                parentId: user.id,
+                parentEmail: user.email,
+                parentName: parent?.full_name || user.email?.split("@")[0],
+                childName: `${child?.first_name} ${child?.last_name}`,
+                className,
+                divisionName: div?.name || "Preschool",
+                weeks: waitlistWeekNames,
+              },
+            }),
+          });
+        } catch (e) { console.warn("Waitlist email failed:", e.message); }
+      }
+
+      const confirmedCount = regData.weeks.length;
+      const waitlistCount = waitlistWeeks.length;
+      const msg = waitlistCount > 0 && confirmedCount > 0
+        ? `Registered for ${confirmedCount} week${confirmedCount !== 1 ? "s" : ""}, ${waitlistCount} waitlisted!`
+        : waitlistCount > 0
+          ? `Added to waitlist for ${waitlistCount} week${waitlistCount !== 1 ? "s" : ""}!`
+          : `Registered for ${confirmedCount} week${confirmedCount !== 1 ? "s" : ""}!`;
+      showToast(msg);
       setModal(null);
       load();
     } catch (e) {
@@ -399,7 +463,11 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
     const child = children.find((c) => c.id === reg.child_id);
     const weekLabel = week?.name || "this week";
     const childLabel = child ? `${child.first_name}` : "this child";
-    if (!window.confirm(`Remove ${childLabel} from ${weekLabel}? This will reduce your balance by $${(reg.price_cents / 100).toFixed(0)}.`)) return;
+    const isWaitlisted = reg.status === "waitlisted";
+    const confirmMsg = isWaitlisted
+      ? `Remove ${childLabel} from the ${weekLabel} waitlist?`
+      : `Remove ${childLabel} from ${weekLabel}? This will reduce your balance by $${(reg.price_cents / 100).toFixed(0)}.`;
+    if (!window.confirm(confirmMsg)) return;
 
     try {
       await sb.query("registrations", {
@@ -407,7 +475,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         filters: `&id=eq.${reg.id}`,
       });
 
-      if (ledger) {
+      // Only adjust ledger for non-waitlisted registrations
+      if (!isWaitlisted && ledger) {
         const newDue = Math.max(0, (Number(ledger.total_due_cents) || 0) - (Number(reg.price_cents) || 0));
         await sb.query("family_ledger", {
           method: "PATCH",
@@ -420,7 +489,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         });
       }
 
-      showToast(`Removed ${childLabel} from ${weekLabel}.`);
+      showToast(isWaitlisted ? `Removed ${childLabel} from ${weekLabel} waitlist.` : `Removed ${childLabel} from ${weekLabel}.`);
       load();
     } catch (e) {
       alert("Error removing week: " + e.message);
@@ -846,14 +915,15 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                         <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                           {regs.map((r) => {
                             const week = weekById(r.week_id);
+                            const isWaitlisted = r.status === "waitlisted";
                             return (
-                              <span key={r.id} style={{ ...s.badge(colors.forest), fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                {week?.name || "Week"}
+                              <span key={r.id} style={{ ...s.badge(isWaitlisted ? colors.amber : colors.forest), fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                {isWaitlisted && "⏳ "}{week?.name || "Week"}{isWaitlisted && " (waitlist)"}
                                 {canRemoveWeeks && (
                                   <span
                                     onClick={(e) => { e.stopPropagation(); handleRemoveWeek(r); }}
                                     style={{ cursor: "pointer", marginLeft: 2, fontSize: 13, lineHeight: 1, color: "inherit", opacity: 0.7, fontWeight: 700 }}
-                                    title="Remove this week"
+                                    title={isWaitlisted ? "Remove from waitlist" : "Remove this week"}
                                   >✕</span>
                                 )}
                               </span>
