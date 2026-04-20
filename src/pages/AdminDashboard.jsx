@@ -729,11 +729,11 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const load = useCallback(async () => {
     try {
       const [reg, divs, wks, ch, par, codes, ledg, settingsRows, shirts] = await Promise.all([
-        sb.query("registrations", { select: "*", filters: "&order=created_at.desc" }),
+        sb.query("registrations", { select: "*", filters: "&order=created_at.desc&limit=10000" }),
         sb.query("divisions", { filters: "&order=sort_order.asc" }),
         sb.query("division_weeks", { filters: "&order=sort_order.asc" }),
-        sb.query("children"),
-        sb.query("parents"),
+        sb.query("children", { filters: "&limit=5000" }),
+        sb.query("parents", { filters: "&limit=5000" }),
         sb.query("discount_codes", { filters: "&order=created_at.desc" }).catch(() => []),
         sb.query("family_ledger").catch(() => []),
         sb.query("camp_settings").catch(() => []),
