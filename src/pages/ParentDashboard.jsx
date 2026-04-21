@@ -294,6 +294,15 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         } catch (e) { console.warn("Waitlist email failed:", e.message); }
       }
 
+      // Update ledger state immediately so the UI doesn't flash stale "paid" status
+      if (regData.weeks.length > 0) {
+        const currentDueCents = (ledger?.total_due_cents || 0) + regData.total_cents;
+        setLedger((prev) => prev
+          ? { ...prev, total_due_cents: currentDueCents, discount_amount_cents: (prev.discount_amount_cents || 0) + regData.discount_cents }
+          : { parent_id: user.id, total_due_cents: regData.total_cents, total_paid_cents: 0, discount_amount_cents: regData.discount_cents }
+        );
+      }
+
       const confirmedCount = regData.weeks.length;
       const waitlistCount = waitlistWeeks.length;
       const msg = waitlistCount > 0 && confirmedCount > 0
@@ -303,7 +312,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
           : `Registered for ${confirmedCount} week${confirmedCount !== 1 ? "s" : ""}!`;
       showToast(msg);
       setModal(null);
-      load();
+      await load();
     } catch (e) {
       if (e.message?.includes("unique") || e.message?.includes("duplicate")) {
         alert("This child is already registered for one of the selected weeks.");
