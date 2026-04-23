@@ -1057,6 +1057,6 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
           });
         }} disabled={saving} style={s.btn("primary")}>{saving ? <Spinner size={16} /> : "Save"}</button>
       </div>
-    </Modal>
+    </Modal>   
   );
 };
