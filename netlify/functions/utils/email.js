@@ -30,7 +30,8 @@ async function sendEmail({ to, subject, html, replyTo }) {
         to: recipients,
         subject,
         html,
-        reply_to: replyTo || FROM_EMAIL,
+        reply_to: replyTo || "kingstoncgi@gmail.com",
+
       }),
     });
 
