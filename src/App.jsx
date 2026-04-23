@@ -51,14 +51,14 @@ export default function App() {
   }, []);
 
   // Email/password sign in
-  const handleEmailSignIn = async (email, password, captchaToken) => {
-    const session = await sb.signInWithEmail(email, password, captchaToken);
+  const handleEmailSignIn = async (email, password) => {
+    const session = await sb.signInWithEmail(email, password);
     await completeLogin(session.user);
   };
 
   // Email/password sign up
-  const handleEmailSignUp = async (email, password, firstName, lastName, captchaToken) => {
-    const data = await sb.signUpWithEmail(email, password, firstName, lastName, captchaToken);
+  const handleEmailSignUp = async (email, password, firstName, lastName) => {
+    const data = await sb.signUpWithEmail(email, password, firstName, lastName);
     if (data.access_token && data.user) {
       await completeLogin(data.user);
     } else if (data.user && !data.access_token) {
