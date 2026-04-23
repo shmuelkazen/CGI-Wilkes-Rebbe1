@@ -309,7 +309,7 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
             <button onClick={() => switchMode("login")} style={{ background: "none", border: "none", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
               Back to Sign In
             </button>
-          </div>  
+          </div>     
         )}
 
         {/* Privacy link — all form views */}
