@@ -40,7 +40,7 @@ function getGradeOptions(division) {
   if (!division) return [...PRESCHOOL_CLASSES, ...ELEMENTARY_GRADES];
   const name = (division.name || "").toLowerCase();
   if (name.includes("preschool") || name.includes("pre-school") || name.includes("half day")) {
-    return PRESCHOOL_CLASSES;
+    return PRESCHOOL_CLASSES.filter((c) => c.value !== "-5");
   }
   // Grade restrictions per division
   let grades = [...ELEMENTARY_GRADES];
@@ -1057,6 +1057,6 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
           });
         }} disabled={saving} style={s.btn("primary")}>{saving ? <Spinner size={16} /> : "Save"}</button>
       </div>
-    </Modal>   
+    </Modal>
   );
 };
