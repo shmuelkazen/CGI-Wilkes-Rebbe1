@@ -212,6 +212,7 @@ exports.handler = async (event) => {
       to: recipientEmails,
       subject: emailContent.subject,
       html: emailContent.html,
+      replyTo: "kingstoncgi@gmail.com",
     });
 
     return {

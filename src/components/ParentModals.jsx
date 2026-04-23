@@ -42,7 +42,14 @@ function getGradeOptions(division) {
   if (name.includes("preschool") || name.includes("pre-school") || name.includes("half day")) {
     return PRESCHOOL_CLASSES;
   }
-  return ELEMENTARY_GRADES;
+  // Grade restrictions per division
+  let grades = [...ELEMENTARY_GRADES];
+  if (name.includes("girls")) {
+    grades = grades.filter((g) => !["7", "8"].includes(g.value));
+  } else if (name.includes("boys")) {
+    grades = grades.filter((g) => g.value !== "8");
+  }
+  return grades;
 }
 
 // ============================================================
@@ -883,7 +890,13 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
     first_name: parent.first_name || "",
     last_name: parent.last_name || "",
     phone: parent.phone || "",
-    address: parent.address || "",
+    street_address: parent.street_address || "",
+    city: parent.city || "Kingston",
+    state: parent.state || "PA",
+    zip: parent.zip || "18704",
+    parent2_first_name: parent.parent2_first_name || "",
+    parent2_last_name: parent.parent2_last_name || "",
+    parent2_phone: parent.parent2_phone || "",
     elrc_status: parent.elrc_status ?? false,
     elrc_acknowledged: parent.elrc_acknowledged ?? false,
   });
@@ -891,13 +904,13 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
   const set = (k, v) => { setForm((p) => ({ ...p, [k]: v })); setErrors((p) => ({ ...p, [k]: null })); };
 
   // Format phone as user types: (555) 123-4567
-  const handlePhone = (raw) => {
+  const formatPhone = (raw) => {
     const digits = raw.replace(/\D/g, "").slice(0, 10);
     let formatted = digits;
     if (digits.length > 6) formatted = `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
     else if (digits.length > 3) formatted = `(${digits.slice(0,3)}) ${digits.slice(3)}`;
     else if (digits.length > 0) formatted = `(${digits}`;
-    set("phone", formatted);
+    return formatted;
   };
 
   const handleElrcToggle = (checked) => {
@@ -918,12 +931,18 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
     if (!phoneDigits) errs.phone = "Phone number is required.";
     else if (phoneDigits.length < 10) errs.phone = "Enter a full 10-digit phone number.";
 
-    // Address: must look like a real address (has a number and text, reasonable length)
-    const addr = form.address.trim();
-    if (!addr) errs.address = "Address is required.";
-    else if (addr.length < 8) errs.address = "Please enter your full street address.";
-    else if (!/\d/.test(addr)) errs.address = "Address should include a street number.";
-    else if (!/[a-zA-Z]/.test(addr)) errs.address = "Address should include a street name.";
+    // Address fields
+    if (!form.street_address.trim()) errs.street_address = "Street address is required.";
+    else if (form.street_address.trim().length < 5) errs.street_address = "Please enter your full street address.";
+    if (!form.city.trim()) errs.city = "City is required.";
+    if (!form.state.trim() || form.state.trim().length < 2) errs.state = "2-letter state required.";
+    if (!form.zip.trim() || form.zip.trim().length < 5) errs.zip = "5-digit ZIP required.";
+
+    // Parent 2 phone validation (only if they entered a name)
+    if (form.parent2_first_name.trim() || form.parent2_last_name.trim()) {
+      const p2Digits = (form.parent2_phone || "").replace(/\D/g, "");
+      if (p2Digits && p2Digits.length < 10) errs.parent2_phone = "Enter a full 10-digit phone number.";
+    }
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -934,6 +953,8 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
 
   return (
     <Modal title="My Profile" onClose={onClose}>
+      {/* Parent/Guardian 1 */}
+      <div style={{ fontSize: 13, fontWeight: 600, color: colors.textMid, marginBottom: 6 }}>Parent / Guardian 1</div>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="First Name *">
@@ -949,13 +970,50 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
         </div>
       </div>
       <Field label="Phone *">
-        <input style={inputErr("phone")} value={form.phone} onChange={(e) => handlePhone(e.target.value)} placeholder="(555) 123-4567" inputMode="tel" />
+        <input style={inputErr("phone")} value={form.phone} onChange={(e) => set("phone", formatPhone(e.target.value))} placeholder="(555) 123-4567" inputMode="tel" />
         {errors.phone && <div style={errStyle}>{errors.phone}</div>}
       </Field>
-      <Field label="Address *">
-        <input style={inputErr("address")} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="123 Main St, City, State ZIP" />
-        {errors.address && <div style={errStyle}>{errors.address}</div>}
-      </Field>
+
+      {/* Address */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: colors.textMid, marginBottom: 6 }}>Address</div>
+        <Field label="Street Address *">
+          <input style={inputErr("street_address")} value={form.street_address} onChange={(e) => set("street_address", e.target.value)} placeholder="123 Main St" />
+          {errors.street_address && <div style={errStyle}>{errors.street_address}</div>}
+        </Field>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "0 10px" }}>
+          <Field label="City *">
+            <input style={inputErr("city")} value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="Kingston" />
+            {errors.city && <div style={errStyle}>{errors.city}</div>}
+          </Field>
+          <Field label="State *">
+            <input style={inputErr("state")} value={form.state} onChange={(e) => set("state", e.target.value.toUpperCase().slice(0, 2))} placeholder="PA" maxLength={2} />
+            {errors.state && <div style={errStyle}>{errors.state}</div>}
+          </Field>
+          <Field label="ZIP *">
+            <input style={inputErr("zip")} value={form.zip} onChange={(e) => set("zip", e.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="18704" inputMode="numeric" maxLength={5} />
+            {errors.zip && <div style={errStyle}>{errors.zip}</div>}
+          </Field>
+        </div>
+      </div>
+
+      {/* Parent/Guardian 2 (optional) */}
+      <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: colors.textMid, marginBottom: 2 }}>Parent / Guardian 2</div>
+        <div style={{ fontSize: 12, color: colors.textLight, marginBottom: 8 }}>Optional — add a second parent or guardian's contact info.</div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="First Name"><input style={s.input} value={form.parent2_first_name} onChange={(e) => set("parent2_first_name", e.target.value)} /></Field>
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="Last Name"><input style={s.input} value={form.parent2_last_name} onChange={(e) => set("parent2_last_name", e.target.value)} /></Field>
+          </div>
+        </div>
+        <Field label="Phone">
+          <input style={inputErr("parent2_phone")} value={form.parent2_phone} onChange={(e) => set("parent2_phone", formatPhone(e.target.value))} placeholder="(555) 123-4567" inputMode="tel" />
+          {errors.parent2_phone && <div style={errStyle}>{errors.parent2_phone}</div>}
+        </Field>
+      </div>
 
       {/* ELRC Self-Identification */}
       <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
@@ -986,7 +1044,13 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
             last_name: form.last_name.trim(),
             full_name: `${form.first_name.trim()} ${form.last_name.trim()}`,
             phone: form.phone.trim(),
-            address: form.address.trim(),
+            street_address: form.street_address.trim(),
+            city: form.city.trim(),
+            state: form.state.trim(),
+            zip: form.zip.trim(),
+            parent2_first_name: form.parent2_first_name.trim() || null,
+            parent2_last_name: form.parent2_last_name.trim() || null,
+            parent2_phone: form.parent2_phone.trim() || null,
             elrc_status: form.elrc_status,
             elrc_acknowledged: form.elrc_acknowledged,
             updated_at: new Date().toISOString(),

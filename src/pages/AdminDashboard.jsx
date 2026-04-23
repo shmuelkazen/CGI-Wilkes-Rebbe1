@@ -393,7 +393,7 @@ function SettingsModal({ settings, onClose, onSave, saving }) {
 // ============================================================
 function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRegisterChild, onRecordPayment, onClearBalance, saving }) {
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ full_name: parent?.full_name || "", phone: parent?.phone || "", address: parent?.address || "", elrc_status: parent?.elrc_status ?? false });
+  const [form, setForm] = useState({ full_name: parent?.full_name || "", phone: parent?.phone || "", street_address: parent?.street_address || "", city: parent?.city || "Kingston", state: parent?.state || "PA", zip: parent?.zip || "18704", parent2_first_name: parent?.parent2_first_name || "", parent2_last_name: parent?.parent2_last_name || "", parent2_phone: parent?.parent2_phone || "", elrc_status: parent?.elrc_status ?? false });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const [emails, setEmails] = useState(() => { try { return Array.isArray(parent?.additional_emails) ? parent.additional_emails : JSON.parse(parent?.additional_emails || "[]"); } catch { return []; } });
   const [newEmail, setNewEmail] = useState({ name: "", email: "" });
@@ -421,7 +421,19 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
               <Field label="Phone"><input style={s.input} value={form.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
               <Field label="Login Email"><input style={{ ...s.input, background: colors.bg, color: colors.textMid }} value={parent?.email || ""} disabled /></Field>
             </div>
-            <Field label="Address"><input style={s.input} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="Street, City, State ZIP" /></Field>
+            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, marginBottom: 4, color: colors.textMid }}>Address</div>
+            <Field label="Street Address"><input style={s.input} value={form.street_address} onChange={(e) => set("street_address", e.target.value)} placeholder="123 Main St" /></Field>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "0 10px" }}>
+              <Field label="City"><input style={s.input} value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="Kingston" /></Field>
+              <Field label="State"><input style={s.input} value={form.state} onChange={(e) => set("state", e.target.value.toUpperCase().slice(0, 2))} placeholder="PA" maxLength={2} /></Field>
+              <Field label="ZIP"><input style={s.input} value={form.zip} onChange={(e) => set("zip", e.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="18704" maxLength={5} /></Field>
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, marginBottom: 4, color: colors.textMid }}>Parent / Guardian 2</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 10px" }}>
+              <Field label="First Name"><input style={s.input} value={form.parent2_first_name} onChange={(e) => set("parent2_first_name", e.target.value)} /></Field>
+              <Field label="Last Name"><input style={s.input} value={form.parent2_last_name} onChange={(e) => set("parent2_last_name", e.target.value)} /></Field>
+              <Field label="Phone"><input style={s.input} value={form.parent2_phone} onChange={(e) => set("parent2_phone", e.target.value)} /></Field>
+            </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", marginTop: 8, marginBottom: 4 }}><input type="checkbox" checked={form.elrc_status} onChange={(e) => set("elrc_status", e.target.checked)} /><strong>ELRC / Childcare Subsidy</strong></label>
             <div style={{ fontSize: 12, color: colors.textLight, marginLeft: 26, marginBottom: 8 }}>This family receives ELRC childcare subsidies and will be charged the reduced rate.</div>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: colors.textMid }}>Additional Email Recipients</div>
@@ -433,14 +445,15 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button onClick={() => setEditing(false)} style={s.btn("secondary")}>Cancel</button>
-              <button onClick={() => { if (!form.full_name.trim()) return alert("Parent name is required."); onSaveParent({ full_name: form.full_name.trim(), phone: form.phone.trim(), address: form.address.trim(), elrc_status: form.elrc_status, additional_emails: JSON.stringify(emails) }); setEditing(false); }} disabled={saving} style={s.btn("primary")}>{saving ? <Spinner size={14} /> : "Save"}</button>
+              <button onClick={() => { if (!form.full_name.trim()) return alert("Parent name is required."); onSaveParent({ full_name: form.full_name.trim(), phone: form.phone.trim(), street_address: form.street_address.trim(), city: form.city.trim(), state: form.state.trim(), zip: form.zip.trim(), parent2_first_name: form.parent2_first_name.trim() || null, parent2_last_name: form.parent2_last_name.trim() || null, parent2_phone: form.parent2_phone.trim() || null, elrc_status: form.elrc_status, additional_emails: JSON.stringify(emails) }); setEditing(false); }} disabled={saving} style={s.btn("primary")}>{saving ? <Spinner size={14} /> : "Save"}</button>
             </div>
           </>
         ) : (
           <div style={{ fontSize: 13, lineHeight: 1.8 }}>
             <div><span style={{ color: colors.textMid }}>Email:</span> {parent?.email}</div>
             <div><span style={{ color: colors.textMid }}>Phone:</span> {parent?.phone || "—"}</div>
-            <div><span style={{ color: colors.textMid }}>Address:</span> {parent?.address || "—"}</div>
+            <div><span style={{ color: colors.textMid }}>Address:</span> {[parent?.street_address, parent?.city, parent?.state, parent?.zip].filter(Boolean).join(", ") || parent?.address || "—"}</div>
+            {parent?.parent2_first_name && <div><span style={{ color: colors.textMid }}>Parent/Guardian 2:</span> {parent.parent2_first_name} {parent.parent2_last_name}{parent.parent2_phone ? ` · ${parent.parent2_phone}` : ""}</div>}
             {parent?.elrc_status && <div><span style={{ ...s.badge(colors.forest), fontSize: 11 }}>ELRC</span></div>}
             {emails.length > 0 && <div><span style={{ color: colors.textMid }}>Additional emails:</span> {emails.map((e) => e.email).join(", ")}</div>}
           </div>
@@ -951,8 +964,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
   });
 
   const exportCSV = () => {
-    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Division", "Week", "Status", "Price", "Food Allergies", "Medical Condition", "Medications", "Services", "Services Detail", "Additional Notes", "Registered"]];
-    filtered.forEach((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : ""; rows.push([`${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "", div?.name || "", wk?.name || "", r.status, `$${(r.price_cents / 100).toFixed(0)}`, c?.has_food_allergies ? `Yes: ${c.allergies}` : "No", c?.has_medical_condition ? `Yes: ${c.medical_notes || c.medical_info || ""}` : "No", c?.has_medications ? `Yes: ${c.medications}` : "No", c?.receives_services ? "Yes" : "No", c?.services_description || "", c?.additional_notes || "", new Date(r.created_at).toLocaleDateString()]); });
+    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Parent 2", "Parent 2 Phone", "Address", "Division", "Week", "Status", "Price", "Food Allergies", "Medical Condition", "Medications", "Services", "Services Detail", "Additional Notes", "Registered"]];
+    filtered.forEach((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : ""; const addr = [p?.street_address, p?.city, p?.state, p?.zip].filter(Boolean).join(", ") || p?.address || ""; const p2Name = [p?.parent2_first_name, p?.parent2_last_name].filter(Boolean).join(" "); rows.push([`${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "", p2Name, p?.parent2_phone || "", addr, div?.name || "", wk?.name || "", r.status, `$${(r.price_cents / 100).toFixed(0)}`, c?.has_food_allergies ? `Yes: ${c.allergies}` : "No", c?.has_medical_condition ? `Yes: ${c.medical_notes || c.medical_info || ""}` : "No", c?.has_medications ? `Yes: ${c.medications}` : "No", c?.receives_services ? "Yes" : "No", c?.services_description || "", c?.additional_notes || "", new Date(r.created_at).toLocaleDateString()]); });
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-registrations-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!");
   };
@@ -1003,7 +1016,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                 <tbody>{filtered.map((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; return (
                   <tr key={r.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
                     <td style={{ padding: "10px 14px", fontWeight: 600 }}>{c?.first_name} {c?.last_name}</td>
-                    <td style={{ padding: "10px 14px" }}>{p?.full_name}<div style={{ fontSize: 12, color: colors.textMid }}>{p?.email}</div></td>
+                    <td style={{ padding: "10px 14px" }}>{p?.full_name}<div style={{ fontSize: 12, color: colors.textMid }}>{p?.email}</div>{p?.parent2_first_name && <div style={{ fontSize: 11, color: colors.textLight }}>P2: {p.parent2_first_name} {p.parent2_last_name}{p.parent2_phone ? ` · ${p.parent2_phone}` : ""}</div>}</td>
                     <td style={{ padding: "10px 14px" }}>{div?.name}</td>
                     <td style={{ padding: "10px 14px" }}>{wk?.name}<div style={{ fontSize: 12, color: colors.textMid }}>{fmtDate(wk?.start_date)}</div></td>
                     <td style={{ padding: "10px 14px" }}><StatusBadge status={r.status} /></td>
@@ -1074,7 +1087,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
             if (filterBalance !== "all") { const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const balance = due - paid; const cleared = ledger?.balance_cleared; if (filterBalance === "has_balance" && (balance <= 0 || cleared)) return false; if (filterBalance === "paid_up" && (balance > 0 && !cleared)) return false; if (filterBalance === "cleared" && !cleared) return false; }
             return true;
           });
-          const exportFamiliesCSV = () => { const rows = [["Parent", "Email", "Phone", "Address", "ELRC", "Children", "Total Due", "Paid", "Balance", "Status"]]; filteredFamilies.forEach((p) => { const kids = children.filter((c) => c.parent_id === p.id); const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const balance = due - paid; const cleared = ledger?.balance_cleared; const status = cleared ? "Cleared" : balance === 0 && due > 0 ? "Paid" : balance > 0 ? "Unpaid" : "—"; rows.push([p.full_name || "", p.email || "", p.phone || "", p.address || "", p.elrc_status ? "Yes" : "No", kids.map((k) => `${k.first_name} ${k.last_name}`).join("; ") || "—", `$${(due / 100).toFixed(0)}`, `$${(paid / 100).toFixed(0)}`, cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`, status]); }); const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"); const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-families-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!"); };
+          const exportFamiliesCSV = () => { const rows = [["Parent", "Email", "Phone", "Address", "Parent 2", "Parent 2 Phone", "ELRC", "Children", "Total Due", "Paid", "Balance", "Status"]]; filteredFamilies.forEach((p) => { const kids = children.filter((c) => c.parent_id === p.id); const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const balance = due - paid; const cleared = ledger?.balance_cleared; const status = cleared ? "Cleared" : balance === 0 && due > 0 ? "Paid" : balance > 0 ? "Unpaid" : "—"; const addr = [p.street_address, p.city, p.state, p.zip].filter(Boolean).join(", ") || p.address || ""; const p2Name = [p.parent2_first_name, p.parent2_last_name].filter(Boolean).join(" "); rows.push([p.full_name || "", p.email || "", p.phone || "", addr, p2Name, p.parent2_phone || "", p.elrc_status ? "Yes" : "No", kids.map((k) => `${k.first_name} ${k.last_name}`).join("; ") || "—", `$${(due / 100).toFixed(0)}`, `$${(paid / 100).toFixed(0)}`, cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`, status]); }); const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"); const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-families-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!"); };
           return (<div>
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ position: "relative", flex: 1, minWidth: 200 }}><span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>{Icons.search({ size: 16, color: colors.textLight })}</span><input style={{ ...s.input, paddingLeft: 36 }} placeholder="Search by name, email, or child…" value={familySearch} onChange={(e) => setFamilySearch(e.target.value)} /></div>
@@ -1088,7 +1101,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}><thead><tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>{["Parent", "Email", "Children", "ELRC", "Total Due", "Paid", "Balance", "Status", "Actions"].map((h) => (<th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>))}</tr></thead>
                 <tbody>{filteredFamilies.map((p) => { const kids = children.filter((c) => c.parent_id === p.id); const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const balance = due - paid; const cleared = ledger?.balance_cleared; return (
                   <tr key={p.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
-                    <td style={{ padding: "10px 14px", fontWeight: 600 }}>{p.full_name || "—"}</td>
+                    <td style={{ padding: "10px 14px", fontWeight: 600 }}>{p.full_name || "—"}{p.parent2_first_name && <div style={{ fontSize: 11, color: colors.textLight, fontWeight: 400 }}>P2: {p.parent2_first_name} {p.parent2_last_name}</div>}</td>
                     <td style={{ padding: "10px 14px", color: colors.textMid }}>{p.email}</td>
                     <td style={{ padding: "10px 14px" }}>{kids.map((k) => k.first_name).join(", ") || "—"}</td>
                     <td style={{ padding: "10px 14px" }}>{p.elrc_status ? <span style={{ ...s.badge(colors.forest), fontSize: 11 }}>ELRC</span> : "—"}</td>
