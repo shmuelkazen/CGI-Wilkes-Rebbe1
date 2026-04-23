@@ -391,7 +391,7 @@ function SettingsModal({ settings, onClose, onSave, saving }) {
 // ============================================================
 // FAMILY LEDGER MODAL
 // ============================================================
-function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRegisterChild, onRecordPayment, onClearBalance, saving }) {
+function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRegisterChild, onRecordPayment, onClearBalance, saving, isStaff }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ full_name: parent?.full_name || "", phone: parent?.phone || "", street_address: parent?.street_address || "", city: parent?.city || "Kingston", state: parent?.state || "PA", zip: parent?.zip || "18704", parent2_first_name: parent?.parent2_first_name || "", parent2_last_name: parent?.parent2_last_name || "", parent2_phone: parent?.parent2_phone || "", elrc_status: parent?.elrc_status ?? false });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -506,7 +506,7 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
       </div>
 
       {/* ── Billing ── */}
-      <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
+      {!isStaff && <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Billing</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
           <div style={{ ...s.card, padding: 10, textAlign: "center" }}><div style={{ fontSize: 10, color: colors.textMid, fontWeight: 600 }}>Total Due</div><div style={{ fontFamily: font.display, fontSize: 20 }}>${((ledger?.total_due_cents || 0) / 100).toFixed(0)}</div></div>
@@ -522,7 +522,7 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
         {showClear && (<div style={{ ...s.card, marginBottom: 12, border: `1px solid ${colors.amber}` }}><div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Clear Balance</div><Field label="Reason *"><input style={s.input} value={clearReason} onChange={(e) => setClearReason(e.target.value)} placeholder="e.g. Scholarship, family arrangement" /></Field><button onClick={() => { if (!clearReason.trim()) return alert("Please enter a reason."); onClearBalance(clearReason.trim()); setShowClear(false); }} disabled={saving} style={s.btn("amber")}>{saving ? <Spinner size={14} /> : "Clear Balance"}</button></div>)}
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Payment History</div>
         {(!payments || payments.length === 0) ? (<div style={{ fontSize: 12, color: colors.textMid, padding: "6px 0" }}>No payments recorded.</div>) : (<div style={{ display: "grid", gap: 4 }}>{payments.map((p) => (<div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: colors.bg, borderRadius: 6, fontSize: 12 }}><div><span style={{ fontWeight: 600 }}>${(p.amount_cents / 100).toFixed(2)}</span><span style={{ color: colors.textMid }}> · {p.method}</span>{p.notes && <span style={{ color: colors.textLight }}> · {p.notes}</span>}</div><span style={{ color: colors.textLight, fontSize: 11 }}>{new Date(p.created_at).toLocaleDateString()}</span></div>))}</div>)}
-      </div>
+      </div>}
     </Modal>
   );
 }
@@ -736,6 +736,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const [adminChildParentId, setAdminChildParentId] = useState(null);
   const [registerChild, setRegisterChild] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [adminRole, setAdminRole] = useState("admin");
   const [waitlistApprovalRegs, setWaitlistApprovalRegs] = useState(null); // array of regs for modal
   const [waitlistApprovalSelected, setWaitlistApprovalSelected] = useState(new Set());
 
@@ -754,6 +755,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
       ]);
       setRegistrations(reg || []); setDivisions(divs || []); setWeeks(wks || []); setChildren(ch || []); setParents(par || []); setDiscountCodes(codes || []); setLedgers(ledg || []); setShirtOrders(shirts || []);
       const st = {}; (settingsRows || []).forEach((row) => { try { st[row.key] = JSON.parse(row.value); } catch { st[row.key] = row.value; } }); setSettings(st);
+      // Fetch admin role
+      try { const roleRows = await sb.query("admin_users", { filters: `&id=eq.${user.id}`, select: "role" }); if (roleRows && roleRows[0]) setAdminRole(roleRows[0].role || "admin"); } catch { /* default to admin */ }
     } catch (e) { console.error("Admin load:", e); } finally { setLoading(false); }
   }, []);
 
@@ -978,11 +981,12 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const totalWaitlisted = registrations.filter((r) => r.status === "waitlisted").length;
   const totalRevenue = ledgers.reduce((sum, l) => sum + (l.total_paid_cents || 0), 0);
   const campName = settings.camp_name || "CGI Wilkes Rebbe";
+  const isStaff = adminRole === "staff" || adminRole === "counselor";
 
   return (
     <div style={{ minHeight: "100vh", background: colors.bg }}>
       <header style={{ background: colors.forest, padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><img src="/logo.png" alt="CGI Wilkes Rebbe" style={{ width: 28, height: 28, objectFit: "contain", borderRadius: "50%" }} /><span style={{ fontFamily: font.display, color: "#fff", fontSize: 20 }}>{campName}</span><span style={s.badge("#fff")}>Admin</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><img src="/logo.png" alt="CGI Wilkes Rebbe" style={{ width: 28, height: 28, objectFit: "contain", borderRadius: "50%" }} /><span style={{ fontFamily: font.display, color: "#fff", fontSize: 20 }}>{campName}</span><span style={s.badge("#fff")}>{isStaff ? "Staff" : "Admin"}</span></div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ color: "#fff", fontSize: 15, fontWeight: "bold", fontFamily: "serif" }}>בס״ד</span><button onClick={() => setView("parent")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.8)", padding: "6px 14px", fontSize: 13 }}>{Icons.home({ size: 14, color: "rgba(255,255,255,.8)" })} Parent View</button><button onClick={handleSignOut} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.6)", padding: "6px 10px" }}>{Icons.logout({ size: 16, color: "rgba(255,255,255,.6)" })}</button></div>
       </header>
 
@@ -992,11 +996,11 @@ export default function AdminDashboard({ user, setView, showToast }) {
           <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Confirmed</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.success }}>{totalConfirmed}</div></div>
           <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Pending</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>{totalPending}</div></div>
           {totalWaitlisted > 0 && <div style={{ ...s.card, border: `1px solid ${colors.amber}` }}><div style={{ fontSize: 12, color: colors.amber, fontWeight: 600, marginBottom: 4 }}>⏳ Waitlisted</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>{totalWaitlisted}</div></div>}
-          <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Revenue (Collected)</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.forest }}>${(totalRevenue / 100).toLocaleString()}</div></div>
+          {!isStaff && <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Revenue (Collected)</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.forest }}>${(totalRevenue / 100).toLocaleString()}</div></div>}
         </div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0, flexWrap: "wrap" }}>
-          {[{ key: "registrations", label: "Registrations", icon: Icons.clipboard }, { key: "divisions", label: "Divisions & Weeks", icon: Icons.calendar }, { key: "families", label: "Families", icon: Icons.users }, { key: "discounts", label: "Discounts", icon: Icons.dollar }, { key: "shirts", label: "T-Shirts", icon: Icons.clipboard }, { key: "bunks", label: "Bunks", icon: Icons.users }, { key: "settings", label: "Settings", icon: Icons.shield }].map((t) => (
+          {[{ key: "registrations", label: "Registrations", icon: Icons.clipboard }, { key: "divisions", label: "Divisions & Weeks", icon: Icons.calendar }, { key: "families", label: "Families", icon: Icons.users }, { key: "discounts", label: "Discounts", icon: Icons.dollar }, { key: "shirts", label: "T-Shirts", icon: Icons.clipboard }, { key: "bunks", label: "Bunks", icon: Icons.users }, { key: "settings", label: "Settings", icon: Icons.shield }].filter((t) => !isStaff || !["discounts", "settings"].includes(t.key)).map((t) => (
             <button key={t.key} onClick={() => t.key === "settings" ? setSettingsModal(true) : setTab(t.key)} style={{ ...s.btn("ghost"), borderBottom: `2px solid ${tab === t.key ? colors.forest : "transparent"}`, color: tab === t.key ? colors.forest : colors.textMid, borderRadius: 0, padding: "10px 16px", fontWeight: 600, fontSize: 14 }}>{t.icon({ size: 15, color: tab === t.key ? colors.forest : colors.textMid })} {t.label}</button>
           ))}
         </div>
@@ -1022,7 +1026,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                     <td style={{ padding: "10px 14px" }}><StatusBadge status={r.status} /></td>
                     <td style={{ padding: "10px 14px", fontSize: 13 }}>${(r.price_cents / 100).toFixed(0)}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, color: colors.textMid }}>{new Date(r.created_at).toLocaleDateString()}</td>
-                    <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}>{r.status === "waitlisted" && (<button onClick={() => handleApproveWaitlist(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Approve</button>)}<button onClick={() => deleteRegistration(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.x({ size: 13, color: colors.coral })} Remove</button></div></td>
+                    <td style={{ padding: "10px 14px" }}>{!isStaff && <div style={{ display: "flex", gap: 4 }}>{r.status === "waitlisted" && (<button onClick={() => handleApproveWaitlist(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Approve</button>)}<button onClick={() => deleteRegistration(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.x({ size: 13, color: colors.coral })} Remove</button></div>}</td>
                   </tr>); })}</tbody>
               </table>
             )}
@@ -1033,7 +1037,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
         {tab === "divisions" && (<div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 14, color: colors.textMid }}>{divisions.length} division{divisions.length !== 1 ? "s" : ""}</div>
-            <button onClick={() => setDivisionModal("create")} style={s.btn("primary")}>{Icons.plus({ size: 16, color: "#fff" })} Add Division</button>
+            {!isStaff && <button onClick={() => setDivisionModal("create")} style={s.btn("primary")}>{Icons.plus({ size: 16, color: "#fff" })} Add Division</button>}
           </div>
           {divisions.length === 0 ? (<div style={s.card}><EmptyState icon={Icons.calendar} title="No divisions yet" sub="Create your first division." /></div>) : (
             <div style={{ display: "grid", gap: 16 }}>{divisions.map((div) => {
@@ -1052,15 +1056,15 @@ export default function AdminDashboard({ user, setView, showToast }) {
                         ${(div.per_week_price / 100).toFixed(0)}/week · {div.gender_filter === "any" ? "All" : div.gender_filter === "male" ? "Boys" : "Girls"} · {totalEnrolled} registrations
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    {!isStaff && <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                       <button onClick={() => setDivisionModal(div)} style={{ ...s.btn("secondary"), padding: "7px 12px", fontSize: 13 }}>{Icons.edit({ size: 14 })} Edit</button>
                       <button onClick={() => handleDeleteDivision(div)} style={{ ...s.btn("ghost"), padding: "7px 10px", color: colors.coral }}>{Icons.trash({ size: 14, color: colors.coral })}</button>
-                    </div>
+                    </div>}
                   </div>
                   <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: colors.textMid }}>{divWeeks.length} Week{divWeeks.length !== 1 ? "s" : ""}</span>
-                      <button onClick={() => { setWeekModalDivision(div); setWeekModal("create"); }} style={{ ...s.btn("ghost"), padding: "4px 10px", fontSize: 12, color: colors.forest }}>{Icons.plus({ size: 13, color: colors.forest })} Add Week</button>
+                      {!isStaff && <button onClick={() => { setWeekModalDivision(div); setWeekModal("create"); }} style={{ ...s.btn("ghost"), padding: "4px 10px", fontSize: 12, color: colors.forest }}>{Icons.plus({ size: 13, color: colors.forest })} Add Week</button>}
                     </div>
                     {divWeeks.length === 0 ? (<div style={{ fontSize: 13, color: colors.textLight, padding: "8px 0" }}>No weeks added yet.</div>) : (
                       <div style={{ display: "grid", gap: 6 }}>{divWeeks.map((wk) => {
@@ -1069,7 +1073,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                         return (
                           <div key={wk.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: colors.bg, borderRadius: 8, fontSize: 13 }}>
                             <div><span style={{ fontWeight: 600 }}>{wk.name}</span><span style={{ color: colors.textMid }}> · {fmtDate(wk.start_date)} – {fmtDate(wk.end_date)}</span><span style={{ color: colors.textMid }}> · ${(price / 100).toFixed(0)}</span><span style={{ color: colors.textLight }}> · {enrolled}/{wk.capacity}</span></div>
-                            <div style={{ display: "flex", gap: 4 }}><button onClick={() => { setWeekModalDivision(div); setWeekModal(wk); }} style={{ ...s.btn("ghost"), padding: "3px 6px", fontSize: 11 }}>{Icons.edit({ size: 12 })}</button><button onClick={() => handleDeleteWeek(wk)} style={{ ...s.btn("ghost"), padding: "3px 6px", color: colors.coral }}>{Icons.trash({ size: 12, color: colors.coral })}</button></div>
+                            {!isStaff && <div style={{ display: "flex", gap: 4 }}><button onClick={() => { setWeekModalDivision(div); setWeekModal(wk); }} style={{ ...s.btn("ghost"), padding: "3px 6px", fontSize: 11 }}>{Icons.edit({ size: 12 })}</button><button onClick={() => handleDeleteWeek(wk)} style={{ ...s.btn("ghost"), padding: "3px 6px", color: colors.coral }}>{Icons.trash({ size: 12, color: colors.coral })}</button></div>}
                           </div>);
                       })}</div>
                     )}
@@ -1166,7 +1170,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
       {weekModal && <WeekModal week={weekModal === "create" ? null : weekModal} division={weekModalDivision} onClose={() => { setWeekModal(null); setWeekModalDivision(null); }} onSave={handleSaveWeek} saving={saving} />}
       {discountModal && <DiscountCodeModal code={discountModal === "create" ? null : discountModal} onClose={() => setDiscountModal(null)} onSave={async (data) => { setSaving(true); try { if (discountModal === "create") { await sb.query("discount_codes", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Discount code created!"); } else { await sb.query("discount_codes", { method: "PATCH", body: data, filters: `&id=eq.${discountModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Discount code updated!"); } setDiscountModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } }} saving={saving} />}
       {settingsModal && <SettingsModal settings={settings} onClose={() => setSettingsModal(false)} onSave={handleSaveSettings} saving={saving} />}
-      {familyModal && !adminChildModal && !registerChild && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRegisterChild={(kid) => setRegisterChild(kid)} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} saving={saving} />}
+      {familyModal && !adminChildModal && !registerChild && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRegisterChild={(kid) => setRegisterChild(kid)} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} saving={saving} isStaff={isStaff} />}
       {adminChildModal && <AdminChildModal child={adminChildModal === "create" ? null : adminChildModal} parentId={adminChildParentId} divisions={divisions} onClose={() => { setAdminChildModal(null); setAdminChildParentId(null); }} onSave={handleSaveAdminChild} saving={saving} />}
       {registerChild && <RegisterModal child={registerChild} divisions={divisions} weeks={weeks} existingRegs={registrations.filter((r) => r.child_id === registerChild.id && r.status !== "cancelled")} settings={settings} siblingCount={children.filter((c) => c.parent_id === registerChild.parent_id).length} parent={parentMap[registerChild.parent_id]} onClose={() => setRegisterChild(null)} onRegister={handleAdminRegister} saving={saving} isAdmin={true} />}
 
