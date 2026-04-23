@@ -47,7 +47,7 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
       }
     } catch (err) {
       const msg = err.message || "Something went wrong. Please try again.";
-      if (msg.toLowerCase().includes("password") && msg.toLowerCase().includes("characters")) {
+      if (msg.toLowerCase().includes("password") && msg.toLowerCase().includes("character")) {
         setError("Password must be at least 8 characters and include an uppercase letter, lowercase letter, number, and symbol.");
       } else {
         setError(msg);
