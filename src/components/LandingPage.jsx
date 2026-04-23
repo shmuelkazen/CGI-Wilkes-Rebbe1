@@ -124,13 +124,14 @@ export default function LandingPage({ onEmailSignIn, onEmailSignUp, onForgotPass
         <div style={{ animation: "fadeIn .5s ease", maxWidth: 420, width: "100%" }}>
           <img src="/logo.png" alt="CGI Wilkes Rebbe" style={{ width: 100, height: 100, objectFit: "contain", marginBottom: 8 }} />
           <h1 style={{ fontFamily: font.display, fontSize: "clamp(32px, 6vw, 52px)", color: "#fff", lineHeight: 1.1, marginBottom: 12 }}>CGI Wilkes Rebbe</h1>
-          <p style={{ color: "rgba(255,255,255,.8)", fontSize: 18, maxWidth: 440, margin: "0 auto 36px", lineHeight: 1.5 }}>Summer 5786 - 2026 Registration</p>
+          <p style={{ color: "rgba(255,255,255,.8)", fontSize: 18, maxWidth: 440, margin: "0 auto 8px", lineHeight: 1.5 }}>Summer 5786 - 2026 Registration</p>
+          <p style={{ color: "rgba(255,255,255,.5)", fontSize: 14, maxWidth: 440, margin: "0 auto 32px", lineHeight: 1.6 }}>New registration system<br />All families please create an account</p>
 
-          <button onClick={() => switchMode("login")} style={{ ...s.btn("primary"), background: colors.white, color: colors.forest, fontSize: 16, padding: "14px 32px", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,.15)", gap: 12, width: "100%", justifyContent: "center", marginBottom: 12 }}>
-            Sign In
+          <button onClick={() => switchMode("signup")} style={{ ...s.btn("primary"), background: colors.white, color: colors.forest, fontSize: 16, padding: "14px 32px", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,.15)", gap: 12, width: "100%", justifyContent: "center", marginBottom: 12 }}>
+            Create your account
           </button>
-          <button onClick={() => switchMode("signup")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.7)", fontSize: 14, padding: "10px 20px", width: "100%", justifyContent: "center" }}>
-            New parent? Create an account
+          <button onClick={() => switchMode("login")} style={{ ...s.btn("ghost"), color: "rgba(255,255,255,.7)", fontSize: 14, padding: "10px 20px", width: "100%", justifyContent: "center" }}>
+            Already set up? <span style={{ color: "#fff", fontWeight: 600, textDecoration: "underline", marginLeft: 4 }}>Sign in</span>
           </button>
 
           <div style={{ marginTop: 32, fontSize: 12, color: "rgba(255,255,255,.4)" }}>
