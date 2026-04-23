@@ -37,7 +37,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
   const [modal, setModal] = useState(null);
   const [selectedChild, setSelectedChild] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [addressForm, setAddressForm] = useState({ street_address: "", city: "Kingston", state: "PA", zip: "18704", phone: "" });
+  const [addressForm, setAddressForm] = useState({ street_address: "", city: "Kingston", state: "PA", zip: "18704", phone: "", parent2_first_name: "", parent2_last_name: "", parent2_phone: "" });
   const [needsAddress, setNeedsAddress] = useState(false);
   const [paying, setPaying] = useState(false);
   const [paymentMode, setPaymentMode] = useState("full");
@@ -139,7 +139,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       // Check if address or phone is missing
       if (p && (!p.street_address || !p.street_address.trim() || !p.phone || !p.phone.trim())) {
         setNeedsAddress(true);
-        setAddressForm({ street_address: p.street_address || "", city: p.city || "Kingston", state: p.state || "PA", zip: p.zip || "18704", phone: p.phone || "" });
+        setAddressForm({ street_address: p.street_address || "", city: p.city || "Kingston", state: p.state || "PA", zip: p.zip || "18704", phone: p.phone || "", parent2_first_name: p.parent2_first_name || "", parent2_last_name: p.parent2_last_name || "", parent2_phone: p.parent2_phone || "" });
       }
     } catch (e) {
       console.error("Load error:", e);
@@ -629,6 +629,25 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                     setAddressForm({ ...addressForm, phone: fmt });
                   }} placeholder="(555) 123-4567" inputMode="tel" /></Field>
                 </div>
+                {/* Parent/Guardian 2 (optional) */}
+                <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0 12px", paddingTop: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: colors.textMid, marginBottom: 2 }}>Parent / Guardian 2</div>
+                  <div style={{ fontSize: 12, color: colors.textLight, marginBottom: 8 }}>Optional — add a second parent or guardian's contact info.</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", maxWidth: 500 }}>
+                    <Field label="First Name"><input style={s.input} value={addressForm.parent2_first_name} onChange={(e) => setAddressForm({ ...addressForm, parent2_first_name: e.target.value })} /></Field>
+                    <Field label="Last Name"><input style={s.input} value={addressForm.parent2_last_name} onChange={(e) => setAddressForm({ ...addressForm, parent2_last_name: e.target.value })} /></Field>
+                  </div>
+                  <div style={{ maxWidth: 500 }}>
+                    <Field label="Phone"><input style={s.input} value={addressForm.parent2_phone} onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      let fmt = digits;
+                      if (digits.length > 6) fmt = `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+                      else if (digits.length > 3) fmt = `(${digits.slice(0,3)}) ${digits.slice(3)}`;
+                      else if (digits.length > 0) fmt = `(${digits}`;
+                      setAddressForm({ ...addressForm, parent2_phone: fmt });
+                    }} placeholder="(555) 123-4567" inputMode="tel" /></Field>
+                  </div>
+                </div>
                 <button onClick={async () => {
                   const street = addressForm.street_address.trim();
                   const city = addressForm.city.trim();
@@ -642,8 +661,10 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                   if (!zip || zip.length < 5) return alert("Please enter a 5-digit ZIP code.");
                   if (!phoneDigits) return alert("Phone number is required.");
                   if (phoneDigits.length < 10) return alert("Please enter a full 10-digit phone number.");
+                  const p2Digits = (addressForm.parent2_phone || "").replace(/\D/g, "");
+                  if (p2Digits && p2Digits.length < 10) return alert("Please enter a full 10-digit phone number for Parent/Guardian 2.");
                   try {
-                    await sb.query("parents", { method: "PATCH", body: { street_address: street, city, state, zip, phone: addressForm.phone.trim(), updated_at: new Date().toISOString() }, filters: `&id=eq.${user.id}`, headers: { Prefer: "return=minimal" } });
+                    await sb.query("parents", { method: "PATCH", body: { street_address: street, city, state, zip, phone: addressForm.phone.trim(), parent2_first_name: addressForm.parent2_first_name.trim() || null, parent2_last_name: addressForm.parent2_last_name.trim() || null, parent2_phone: addressForm.parent2_phone.trim() || null, updated_at: new Date().toISOString() }, filters: `&id=eq.${user.id}`, headers: { Prefer: "return=minimal" } });
                     setNeedsAddress(false);
                     showToast("Profile updated!");
                     load();
