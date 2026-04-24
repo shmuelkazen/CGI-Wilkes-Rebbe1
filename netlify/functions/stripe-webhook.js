@@ -128,6 +128,9 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: `Webhook Error: ${err.message}` };
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // CHECKOUT.SESSION.COMPLETED — Regular checkout payments
+  // ═══════════════════════════════════════════════════════════
   if (stripeEvent.type === "checkout.session.completed") {
     const session = stripeEvent.data.object;
     const parentId = session.metadata?.parent_id;
@@ -297,6 +300,103 @@ exports.handler = async (event) => {
         console.error("Error processing payment:", err);
         return { statusCode: 500, body: `Processing error: ${err.message}` };
       }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // INVOICE.PAID — Manual Stripe invoices (payment plans, etc.)
+  // ═══════════════════════════════════════════════════════════
+  if (stripeEvent.type === "invoice.paid") {
+    const invoice = stripeEvent.data.object;
+    const customerId = invoice.customer;
+    const amountCents = invoice.amount_paid;
+
+    // Skip zero-amount invoices (e.g. Stripe subscription trials)
+    if (!customerId || !amountCents || amountCents <= 0) {
+      console.log("invoice.paid skipped — no customer or zero amount");
+      return { statusCode: 200, body: JSON.stringify({ received: true }) };
+    }
+
+    try {
+      // Look up parent by stripe_customer_id
+      const parents = await supabaseQuery("parents", {
+        filters: `&stripe_customer_id=eq.${customerId}`,
+        select: "id,email,full_name,additional_emails",
+      });
+
+      if (!parents || parents.length === 0) {
+        console.warn(`invoice.paid — no parent found for Stripe customer ${customerId}`);
+        return { statusCode: 200, body: JSON.stringify({ received: true }) };
+      }
+
+      const parent = parents[0];
+      const parentId = parent.id;
+
+      // 1. Log the payment
+      await supabaseQuery("payment_log", {
+        method: "POST",
+        body: {
+          parent_id: parentId,
+          amount_cents: amountCents,
+          method: "stripe",
+          stripe_payment_id: invoice.payment_intent,
+          notes: `Stripe invoice ${invoice.id}`,
+        },
+        headers: { Prefer: "return=minimal" },
+      });
+
+      // 2. Update ledger
+      const ledger = await ensureLedgerExists(parentId);
+      const totalPaidCents = (ledger?.total_paid_cents || 0) + amountCents;
+      const totalDueCents = ledger?.total_due_cents || 0;
+
+      await supabaseQuery("family_ledger", {
+        method: "PATCH",
+        body: {
+          total_paid_cents: totalPaidCents,
+          updated_at: new Date().toISOString(),
+        },
+        filters: `&parent_id=eq.${parentId}`,
+        headers: { Prefer: "return=minimal" },
+      });
+
+      console.log(`Invoice payment for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
+
+      // 3. Send receipt email
+      const parentInfo = {
+        email: parent.email,
+        name: parent.full_name || "Camp Family",
+        additionalEmails: parent.additional_emails || [],
+      };
+      const recipientEmails = getAllRecipients(parentInfo, null);
+
+      if (recipientEmails.length > 0) {
+        const children = await supabaseQuery("children", {
+          filters: `&parent_id=eq.${parentId}`,
+          select: "id,first_name,last_name",
+        });
+
+        const emailContent = paymentReceiptEmail({
+          parentName: parentInfo.name,
+          amountCents,
+          totalDueCents,
+          totalPaidCents,
+          paymentMethod: "Credit Card (Stripe Invoice)",
+          children: children
+            ? children.map((c) => ({
+                name: `${c.first_name} ${c.last_name}`,
+              }))
+            : [],
+        });
+        await sendEmail({
+          to: recipientEmails,
+          subject: emailContent.subject,
+          html: emailContent.html,
+        }).catch((e) => console.error("Email send failed (invoice):", e));
+      }
+    } catch (err) {
+      console.error("Error processing invoice.paid:", err);
+      return { statusCode: 500, body: `Processing error: ${err.message}` };
     }
   }
 
