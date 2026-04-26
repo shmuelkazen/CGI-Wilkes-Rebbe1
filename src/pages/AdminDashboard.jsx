@@ -415,7 +415,7 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>Parent Info</div>
-          {!editing && <button onClick={() => setEditing(true)} style={{ ...s.btn("ghost"), padding: "3px 8px", fontSize: 12, color: colors.forest }}>{Icons.edit({ size: 12 })} Edit</button>}
+          {!editing && !isStaff && <button onClick={() => setEditing(true)} style={{ ...s.btn("ghost"), padding: "3px 8px", fontSize: 12, color: colors.forest }}>{Icons.edit({ size: 12 })} Edit</button>}
         </div>
         {editing ? (
           <>
@@ -467,7 +467,7 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
       <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>Children ({familyChildren.length})</div>
-          <button onClick={onAddChild} style={{ ...s.btn("ghost"), padding: "3px 8px", fontSize: 12, color: colors.forest }}>{Icons.plus({ size: 12, color: colors.forest })} Add Child</button>
+          {!isStaff && <button onClick={onAddChild} style={{ ...s.btn("ghost"), padding: "3px 8px", fontSize: 12, color: colors.forest }}>{Icons.plus({ size: 12, color: colors.forest })} Add Child</button>}
         </div>
         {familyChildren.length === 0 ? (<div style={{ fontSize: 13, color: colors.textLight, padding: "8px 0" }}>No children added yet.</div>) : (
           <div style={{ display: "grid", gap: 10 }}>{familyChildren.map((kid) => {
@@ -483,8 +483,8 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
                     {kid.gender && <span style={{ color: colors.textMid }}> · {kid.gender === "male" ? "M" : "F"}</span>}
                     {div && <span style={{ color: colors.forest }}> · {div.name}</span>}
                   </div>
-                  <button onClick={() => onEditChild(kid)} style={{ ...s.btn("ghost"), padding: "2px 6px", fontSize: 11 }}>{Icons.edit({ size: 11 })} Edit</button>
-                  <button onClick={() => onRegisterChild(kid)} style={{ ...s.btn("ghost"), padding: "2px 6px", fontSize: 11, color: colors.forest }}>{Icons.calendar({ size: 11, color: colors.forest })} Register</button>
+                  {!isStaff && <button onClick={() => onEditChild(kid)} style={{ ...s.btn("ghost"), padding: "2px 6px", fontSize: 11 }}>{Icons.edit({ size: 11 })} Edit</button>}
+                  {!isStaff && <button onClick={() => onRegisterChild(kid)} style={{ ...s.btn("ghost"), padding: "2px 6px", fontSize: 11, color: colors.forest }}>{Icons.calendar({ size: 11, color: colors.forest })} Register</button>}
                 </div>
                 {kid.has_food_allergies && <div style={{ fontSize: 11, color: colors.textMid }}>Allergies: {kid.allergies}</div>}
                 {kid.has_medical_condition && <div style={{ fontSize: 11, color: colors.textMid }}>Medical: {kid.medical_notes}</div>}
@@ -497,7 +497,7 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
                       const wk = weekMap[r.week_id];
                       const statusColor = r.status === "waitlisted" ? colors.amber : r.status === "confirmed" ? colors.success : colors.forest;
                       const statusLabel = r.status === "waitlisted" ? " ⏳" : r.status === "confirmed" ? " ✓" : "";
-                      return <span key={r.id} style={{ ...s.badge(statusColor), fontSize: 10 }}>{wk?.name || "Week"} · ${(r.price_cents / 100).toFixed(0)}{statusLabel}</span>;
+                      return <span key={r.id} style={{ ...s.badge(statusColor), fontSize: 10 }}>{wk?.name || "Week"}{!isStaff && ` · $${(r.price_cents / 100).toFixed(0)}`}{statusLabel}</span>;
                     })}
                   </div>
                 )}
@@ -1056,8 +1056,9 @@ export default function AdminDashboard({ user, setView, showToast }) {
   });
 
   const exportCSV = () => {
-    const rows = [["Child", "Age", "Parent", "Email", "Phone", "Parent 2", "Parent 2 Phone", "Address", "Division", "Week", "Status", "Price", "Food Allergies", "Medical Condition", "Medications", "Services", "Services Detail", "Additional Notes", "Registered"]];
-    filtered.forEach((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : ""; const addr = [p?.street_address, p?.city, p?.state, p?.zip].filter(Boolean).join(", ") || p?.address || ""; const p2Name = [p?.parent2_first_name, p?.parent2_last_name].filter(Boolean).join(" "); rows.push([`${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "", p2Name, p?.parent2_phone || "", addr, div?.name || "", wk?.name || "", r.status, `$${(r.price_cents / 100).toFixed(0)}`, c?.has_food_allergies ? `Yes: ${c.allergies}` : "No", c?.has_medical_condition ? `Yes: ${c.medical_notes || c.medical_info || ""}` : "No", c?.has_medications ? `Yes: ${c.medications}` : "No", c?.receives_services ? "Yes" : "No", c?.services_description || "", c?.additional_notes || "", new Date(r.created_at).toLocaleDateString()]); });
+    const headers = ["Child", "Age", "Parent", "Email", "Phone", "Parent 2", "Parent 2 Phone", "Address", "Division", "Week", "Status", ...(!isStaff ? ["Price"] : []), "Food Allergies", "Medical Condition", "Medications", "Services", "Services Detail", "Additional Notes", "Registered"];
+    const rows = [headers];
+    filtered.forEach((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; const age = c?.date_of_birth ? Math.floor((Date.now() - new Date(c.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : ""; const addr = [p?.street_address, p?.city, p?.state, p?.zip].filter(Boolean).join(", ") || p?.address || ""; const p2Name = [p?.parent2_first_name, p?.parent2_last_name].filter(Boolean).join(" "); rows.push([`${c?.first_name || ""} ${c?.last_name || ""}`, age, p?.full_name || "", p?.email || "", p?.phone || "", p2Name, p?.parent2_phone || "", addr, div?.name || "", wk?.name || "", r.status, ...(!isStaff ? [`$${(r.price_cents / 100).toFixed(0)}`] : []), c?.has_food_allergies ? `Yes: ${c.allergies}` : "No", c?.has_medical_condition ? `Yes: ${c.medical_notes || c.medical_info || ""}` : "No", c?.has_medications ? `Yes: ${c.medications}` : "No", c?.receives_services ? "Yes" : "No", c?.services_description || "", c?.additional_notes || "", new Date(r.created_at).toLocaleDateString()]); });
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-registrations-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!");
   };
@@ -1089,7 +1090,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
         </div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0, flexWrap: "wrap" }}>
-          {[{ key: "registrations", label: "Registrations", icon: Icons.clipboard }, { key: "divisions", label: "Divisions & Weeks", icon: Icons.calendar }, { key: "families", label: "Families", icon: Icons.users }, { key: "discounts", label: "Discounts", icon: Icons.dollar }, { key: "shirts", label: "T-Shirts", icon: Icons.clipboard }, { key: "bunks", label: "Bunks", icon: Icons.users }, { key: "settings", label: "Settings", icon: Icons.shield }].filter((t) => !isStaff || !["discounts", "settings"].includes(t.key)).map((t) => (
+          {[{ key: "registrations", label: "Registrations", icon: Icons.clipboard }, { key: "divisions", label: "Divisions & Weeks", icon: Icons.calendar }, { key: "families", label: "Families", icon: Icons.users }, { key: "discounts", label: "Discounts", icon: Icons.dollar }, { key: "shirts", label: "T-Shirts", icon: Icons.clipboard }, { key: "bunks", label: "Bunks", icon: Icons.users }, { key: "settings", label: "Settings", icon: Icons.shield }].filter((t) => !isStaff || !["discounts", "settings", "shirts"].includes(t.key)).map((t) => (
             <button key={t.key} onClick={() => t.key === "settings" ? setSettingsModal(true) : setTab(t.key)} style={{ ...s.btn("ghost"), borderBottom: `2px solid ${tab === t.key ? colors.forest : "transparent"}`, color: tab === t.key ? colors.forest : colors.textMid, borderRadius: 0, padding: "10px 16px", fontWeight: 600, fontSize: 14 }}>{t.icon({ size: 15, color: tab === t.key ? colors.forest : colors.textMid })} {t.label}</button>
           ))}
         </div>
@@ -1105,7 +1106,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
           <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
             {filtered.length === 0 ? (<EmptyState icon={Icons.clipboard} title="No registrations found" sub="Adjust your filters or wait for parents to register." />) : (
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                <thead><tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>{["Camper", "Parent", "Division", "Week", "Status", "Price", "Date", "Actions"].map((h) => (<th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>))}</tr></thead>
+                <thead><tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>{["Camper", "Parent", "Division", "Week", "Status", !isStaff && "Price", "Date", "Actions"].filter(Boolean).map((h) => (<th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>))}</tr></thead>
                 <tbody>{filtered.map((r) => { const c = childMap[r.child_id]; const p = c ? parentMap[c.parent_id] : {}; const div = divisionMap[r.division_id]; const wk = weekMap[r.week_id]; return (
                   <tr key={r.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
                     <td style={{ padding: "10px 14px", fontWeight: 600 }}>{c?.first_name} {c?.last_name}</td>
@@ -1113,7 +1114,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                     <td style={{ padding: "10px 14px" }}>{div?.name}</td>
                     <td style={{ padding: "10px 14px" }}>{wk?.name}<div style={{ fontSize: 12, color: colors.textMid }}>{fmtDate(wk?.start_date)}</div></td>
                     <td style={{ padding: "10px 14px" }}><StatusBadge status={r.status} /></td>
-                    <td style={{ padding: "10px 14px", fontSize: 13 }}>${(r.price_cents / 100).toFixed(0)}</td>
+                    {!isStaff && <td style={{ padding: "10px 14px", fontSize: 13 }}>${(r.price_cents / 100).toFixed(0)}</td>}
                     <td style={{ padding: "10px 14px", fontSize: 13, color: colors.textMid }}>{new Date(r.created_at).toLocaleDateString()}</td>
                     <td style={{ padding: "10px 14px" }}>{!isStaff && <div style={{ display: "flex", gap: 4 }}>{r.status === "waitlisted" && (<button onClick={() => handleApproveWaitlist(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.success }}>{Icons.check({ size: 13, color: colors.success })} Approve</button>)}<button onClick={() => deleteRegistration(r)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.coral }}>{Icons.x({ size: 13, color: colors.coral })} Remove</button></div>}</td>
                   </tr>); })}</tbody>
@@ -1142,7 +1143,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                         {div.schedule_type && <span style={s.badge(colors.forest)}>{div.schedule_type === "half_day" ? "Half Day" : "Full Day"}</span>}
                       </div>
                       <div style={{ fontSize: 14, color: colors.textMid }}>
-                        ${(div.per_week_price / 100).toFixed(0)}/week · {div.gender_filter === "any" ? "All" : div.gender_filter === "male" ? "Boys" : "Girls"} · {totalEnrolled} registrations
+                        {!isStaff && `$${(div.per_week_price / 100).toFixed(0)}/week · `}{div.gender_filter === "any" ? "All" : div.gender_filter === "male" ? "Boys" : "Girls"} · {totalEnrolled} registrations
                       </div>
                     </div>
                     {!isStaff && <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -1161,7 +1162,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
                         const price = wk.price_override_cents ?? div.per_week_price;
                         return (
                           <div key={wk.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: colors.bg, borderRadius: 8, fontSize: 13 }}>
-                            <div><span style={{ fontWeight: 600 }}>{wk.name}</span><span style={{ color: colors.textMid }}> · {fmtDate(wk.start_date)} – {fmtDate(wk.end_date)}</span><span style={{ color: colors.textMid }}> · ${(price / 100).toFixed(0)}</span><span style={{ color: colors.textLight }}> · {enrolled}/{wk.capacity}</span></div>
+                            <div><span style={{ fontWeight: 600 }}>{wk.name}</span><span style={{ color: colors.textMid }}> · {fmtDate(wk.start_date)} – {fmtDate(wk.end_date)}</span>{!isStaff && <span style={{ color: colors.textMid }}> · ${(price / 100).toFixed(0)}</span>}<span style={{ color: colors.textLight }}> · {enrolled}/{wk.capacity}</span></div>
                             {!isStaff && <div style={{ display: "flex", gap: 4 }}><button onClick={() => { setWeekModalDivision(div); setWeekModal(wk); }} style={{ ...s.btn("ghost"), padding: "3px 6px", fontSize: 11 }}>{Icons.edit({ size: 12 })}</button><button onClick={() => handleDeleteWeek(wk)} style={{ ...s.btn("ghost"), padding: "3px 6px", color: colors.coral }}>{Icons.trash({ size: 12, color: colors.coral })}</button></div>}
                           </div>);
                       })}</div>
@@ -1180,11 +1181,11 @@ export default function AdminDashboard({ user, setView, showToast }) {
             if (filterBalance !== "all") { const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const balance = due - paid; const cleared = ledger?.balance_cleared; if (filterBalance === "has_balance" && (balance <= 0 || cleared)) return false; if (filterBalance === "paid_up" && (balance > 0 && !cleared)) return false; if (filterBalance === "cleared" && !cleared) return false; }
             return true;
           });
-          const exportFamiliesCSV = () => { const rows = [["Parent", "Email", "Phone", "Address", "Parent 2", "Parent 2 Phone", "ELRC", "Children", "Total Due", "Paid", "Balance", "Status"]]; filteredFamilies.forEach((p) => { const kids = children.filter((c) => c.parent_id === p.id); const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const balance = due - paid; const cleared = ledger?.balance_cleared; const status = cleared ? "Cleared" : balance === 0 && due > 0 ? "Paid" : balance > 0 ? "Unpaid" : "—"; const addr = [p.street_address, p.city, p.state, p.zip].filter(Boolean).join(", ") || p.address || ""; const p2Name = [p.parent2_first_name, p.parent2_last_name].filter(Boolean).join(" "); rows.push([p.full_name || "", p.email || "", p.phone || "", addr, p2Name, p.parent2_phone || "", p.elrc_status ? "Yes" : "No", kids.map((k) => `${k.first_name} ${k.last_name}`).join("; ") || "—", `$${(due / 100).toFixed(0)}`, `$${(paid / 100).toFixed(0)}`, cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`, status]); }); const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"); const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-families-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!"); };
+          const exportFamiliesCSV = () => { const headers = ["Parent", "Email", "Phone", "Address", "Parent 2", "Parent 2 Phone", "ELRC", "Children", ...(!isStaff ? ["Total Due", "Paid", "Balance", "Status"] : [])]; const rows = [headers]; filteredFamilies.forEach((p) => { const kids = children.filter((c) => c.parent_id === p.id); const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const balance = due - paid; const cleared = ledger?.balance_cleared; const status = cleared ? "Cleared" : balance === 0 && due > 0 ? "Paid" : balance > 0 ? "Unpaid" : "—"; const addr = [p.street_address, p.city, p.state, p.zip].filter(Boolean).join(", ") || p.address || ""; const p2Name = [p.parent2_first_name, p.parent2_last_name].filter(Boolean).join(" "); rows.push([p.full_name || "", p.email || "", p.phone || "", addr, p2Name, p.parent2_phone || "", p.elrc_status ? "Yes" : "No", kids.map((k) => `${k.first_name} ${k.last_name}`).join("; ") || "—", ...(!isStaff ? [`$${(due / 100).toFixed(0)}`, `$${(paid / 100).toFixed(0)}`, cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`, status] : [])]); }); const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"); const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-families-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!"); };
           return (<div>
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ position: "relative", flex: 1, minWidth: 200 }}><span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>{Icons.search({ size: 16, color: colors.textLight })}</span><input style={{ ...s.input, paddingLeft: 36 }} placeholder="Search by name, email, or child…" value={familySearch} onChange={(e) => setFamilySearch(e.target.value)} /></div>
-              <select style={{ ...s.input, width: "auto", minWidth: 140 }} value={filterBalance} onChange={(e) => setFilterBalance(e.target.value)}><option value="all">All Balances</option><option value="has_balance">Has Balance</option><option value="paid_up">Paid Up</option><option value="cleared">Cleared</option></select>
+              {!isStaff && <select style={{ ...s.input, width: "auto", minWidth: 140 }} value={filterBalance} onChange={(e) => setFilterBalance(e.target.value)}><option value="all">All Balances</option><option value="has_balance">Has Balance</option><option value="paid_up">Paid Up</option><option value="cleared">Cleared</option></select>}
               <select style={{ ...s.input, width: "auto", minWidth: 120 }} value={filterElrc} onChange={(e) => setFilterElrc(e.target.value)}><option value="all">All Families</option><option value="elrc">ELRC</option><option value="non-elrc">Non-ELRC</option></select>
               <button onClick={exportFamiliesCSV} style={s.btn("secondary")}>{Icons.download({ size: 14 })} Export CSV</button>
               {!isStaff && <button onClick={() => handleReminderPreview("no_weeks")} style={{ ...s.btn("secondary"), color: colors.amber, borderColor: colors.amber }}>📧 Remind: No Weeks</button>}
@@ -1193,17 +1194,17 @@ export default function AdminDashboard({ user, setView, showToast }) {
             <div style={{ fontSize: 14, color: colors.textMid, marginBottom: 12 }}>{filteredFamilies.length} of {parents.length} families</div>
             <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
               {filteredFamilies.length === 0 ? (<EmptyState icon={Icons.users} title="No families found" sub="Adjust your filters or wait for parents to register." />) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}><thead><tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>{["Parent", "Email", "Children", "ELRC", "Total Due", "Paid", "Balance", "Status", "Actions"].map((h) => (<th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>))}</tr></thead>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}><thead><tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>{["Parent", "Email", "Children", "ELRC", ...(!isStaff ? ["Total Due", "Paid", "Balance", "Status"] : []), "Actions"].map((h) => (<th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>))}</tr></thead>
                 <tbody>{filteredFamilies.map((p) => { const kids = children.filter((c) => c.parent_id === p.id); const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const balance = due - paid; const cleared = ledger?.balance_cleared; return (
                   <tr key={p.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
                     <td style={{ padding: "10px 14px", fontWeight: 600 }}>{p.full_name || "—"}{p.parent2_first_name && <div style={{ fontSize: 11, color: colors.textLight, fontWeight: 400 }}>P2: {p.parent2_first_name} {p.parent2_last_name}</div>}</td>
                     <td style={{ padding: "10px 14px", color: colors.textMid }}>{p.email}</td>
                     <td style={{ padding: "10px 14px" }}>{kids.map((k) => k.first_name).join(", ") || "—"}</td>
                     <td style={{ padding: "10px 14px" }}>{p.elrc_status ? <span style={{ ...s.badge(colors.forest), fontSize: 11 }}>ELRC</span> : "—"}</td>
-                    <td style={{ padding: "10px 14px" }}>${(due / 100).toFixed(0)}</td>
-                    <td style={{ padding: "10px 14px", color: colors.success }}>${(paid / 100).toFixed(0)}</td>
-                    <td style={{ padding: "10px 14px", fontWeight: 600, color: cleared ? colors.success : balance > 0 ? colors.amber : colors.success }}>{cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`}</td>
-                    <td style={{ padding: "10px 14px" }}>{cleared ? <StatusBadge status="confirmed" /> : balance === 0 && due > 0 ? <StatusBadge status="paid" /> : balance > 0 ? <StatusBadge status="unpaid" /> : "—"}</td>
+                    {!isStaff && <td style={{ padding: "10px 14px" }}>${(due / 100).toFixed(0)}</td>}
+                    {!isStaff && <td style={{ padding: "10px 14px", color: colors.success }}>${(paid / 100).toFixed(0)}</td>}
+                    {!isStaff && <td style={{ padding: "10px 14px", fontWeight: 600, color: cleared ? colors.success : balance > 0 ? colors.amber : colors.success }}>{cleared ? "Cleared" : `$${(balance / 100).toFixed(0)}`}</td>}
+                    {!isStaff && <td style={{ padding: "10px 14px" }}>{cleared ? <StatusBadge status="confirmed" /> : balance === 0 && due > 0 ? <StatusBadge status="paid" /> : balance > 0 ? <StatusBadge status="unpaid" /> : "—"}</td>}
                     <td style={{ padding: "10px 14px" }}><button onClick={() => openFamily(p)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.users({ size: 13, color: colors.forest })} View</button></td>
                   </tr>); })}</tbody></table>
               )}
