@@ -157,7 +157,7 @@ const {
     ]);
   
     const now = new Date();
-    const cutoff7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const cutoff72h = new Date(now.getTime() - 72 * 60 * 60 * 1000);
   
     // Index data
     const parentMap = Object.fromEntries(parents.map((p) => [p.id, p]));
@@ -214,7 +214,7 @@ const {
       const payments = paymentsByParent[ledger.parent_id] || [];
       if (payments.length > 0) {
         const latestPayment = new Date(payments[0].created_at);
-        if (latestPayment > cutoff7d) continue;
+        if (latestPayment > cutoff72h) continue;
       }
   
       recipients.push({
