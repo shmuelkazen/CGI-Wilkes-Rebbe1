@@ -8,6 +8,7 @@ const FROM_EMAIL = process.env.FROM_EMAIL || "onboarding@resend.dev";
 const CAMP_NAME = "CGI Wilkes Rebbe";
 const SITE_URL = process.env.SITE_URL || "https://cgikingston.com";
 const LOGO_URL = process.env.CAMP_LOGO_URL || `${SITE_URL}/logo.png`;
+const REGISTER_URL = "https://register.cgikingston.com";
 
 // ── Send via Resend API ──────────────────────────────────────
 async function sendEmail({ to, subject, html, replyTo }) {
@@ -446,6 +447,48 @@ function waitlistApprovedEmail({ parentName, childName, className, divisionName,
   };
 }
 
+// ═══════════════════════════════════════════════════════════════
+// REMINDER TEMPLATES
+// ═══════════════════════════════════════════════════════════════
+
+// ── Complete Registration Reminder (paid reg fee but no weeks selected) ──
+function completeRegistrationReminderEmail({ parentName }) {
+  const body = `
+    <h2 ${styles.heading}>Complete Your Registration</h2>
+    <p ${styles.text}>Hi ${parentName},</p>
+    <p ${styles.text}>Thank you for starting the registration process and paying the registration fee!</p>
+    <p ${styles.text}>We noticed that you haven't yet selected weeks for your child(ren). Please log back in, choose which weeks you'd like to register for, and complete your payment.</p>
+    <p ${styles.text}>Please note that the early bird rate is available when paid in full by 10 Sivan (May 26th). After that date, pricing will increase.</p>
+    <p style="text-align:center;">
+      <a href="${REGISTER_URL}" ${styles.button}>Log In to Complete Registration &rarr;</a>
+    </p>
+  `;
+
+  return {
+    subject: `${CAMP_NAME} — Complete Your Registration — Select Your Weeks`,
+    html: wrapEmail(body),
+  };
+}
+
+// ── Balance Reminder (registered but outstanding balance) ──
+function balanceReminderEmail({ parentName, balanceCents }) {
+  const body = `
+    <h2 ${styles.heading}>Outstanding Balance</h2>
+    <p ${styles.text}>Hi ${parentName},</p>
+    <p ${styles.text}>Thank you for registering for ${CAMP_NAME}!</p>
+    <p ${styles.text}>Your registration is complete, but you have an outstanding balance of <strong>${formatCents(balanceCents)}</strong>. This total reflects the early bird rate, which is available when paid in full by 10 Sivan (May 26th). After that date, pricing will increase.</p>
+    <p ${styles.text}>Please note that in order to attend camp, payment must be completed or a payment plan must be in place with Rabbi Green.</p>
+    <p style="text-align:center;">
+      <a href="${REGISTER_URL}" ${styles.button}>Log In to Pay &rarr;</a>
+    </p>
+  `;
+
+  return {
+    subject: `${CAMP_NAME} — Complete Your Payment — Outstanding Balance`,
+    html: wrapEmail(body),
+  };
+}
+
 module.exports = {
   sendEmail,
   wrapEmail,
@@ -458,6 +501,8 @@ module.exports = {
   shirtOrderReceiptEmail,
   waitlistConfirmationEmail,
   waitlistApprovedEmail,
+  completeRegistrationReminderEmail,
+  balanceReminderEmail,
   CAMP_NAME,
   SITE_URL,
 };

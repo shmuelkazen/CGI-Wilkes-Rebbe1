@@ -391,7 +391,7 @@ function SettingsModal({ settings, onClose, onSave, saving }) {
 // ============================================================
 // FAMILY LEDGER MODAL
 // ============================================================
-function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRegisterChild, onRecordPayment, onClearBalance, saving, isStaff }) {
+function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRegisterChild, onRecordPayment, onClearBalance, onSavePaymentPlan, saving, isStaff }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ full_name: parent?.full_name || "", phone: parent?.phone || "", street_address: parent?.street_address || "", city: parent?.city || "Kingston", state: parent?.state || "PA", zip: parent?.zip || "18704", parent2_first_name: parent?.parent2_first_name || "", parent2_last_name: parent?.parent2_last_name || "", parent2_phone: parent?.parent2_phone || "", elrc_status: parent?.elrc_status ?? false });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -404,6 +404,9 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
   const [clearReason, setClearReason] = useState("");
   const [showPay, setShowPay] = useState(false);
   const [showClear, setShowClear] = useState(false);
+  const [ppToggle, setPpToggle] = useState(ledger?.payment_plan || false);
+  const [ppNote, setPpNote] = useState(ledger?.payment_plan_note || "");
+  const [showPpNote, setShowPpNote] = useState(!!(ledger?.payment_plan));
   const balance = (ledger?.total_due_cents || 0) - (ledger?.total_paid_cents || 0);
 
   return (
@@ -514,6 +517,28 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
           <div style={{ ...s.card, padding: 10, textAlign: "center", border: balance > 0 ? `1px solid ${colors.amber}` : `1px solid ${colors.success}` }}><div style={{ fontSize: 10, color: colors.textMid, fontWeight: 600 }}>Balance</div><div style={{ fontFamily: font.display, fontSize: 20, color: balance > 0 ? colors.amber : colors.success }}>${(balance / 100).toFixed(0)}</div></div>
         </div>
         {ledger?.balance_cleared && (<div style={{ background: colors.forestPale, border: `1px solid ${colors.success}`, borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 12 }}>{Icons.check({ size: 12, color: colors.success })} <strong>Balance cleared</strong>{ledger.balance_cleared_reason ? `: ${ledger.balance_cleared_reason}` : ""}</div>)}
+        {/* ── Payment Plan Toggle ── */}
+        <div style={{ ...s.card, marginBottom: 14, border: `1px solid ${ppToggle ? colors.forest : colors.border}`, background: ppToggle ? colors.forestPale : colors.card }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={ppToggle} onChange={(e) => { const val = e.target.checked; setPpToggle(val); setShowPpNote(val); if (!val) { onSavePaymentPlan({ payment_plan: false, payment_plan_note: "" }); setPpNote(""); } }} />
+              Payment Plan in Place
+            </label>
+            {ppToggle && <span style={{ fontSize: 11, color: colors.forest, fontWeight: 600 }}>Will skip balance reminders</span>}
+          </div>
+          {showPpNote && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "end" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: colors.textMid, marginBottom: 4 }}>Notes</div>
+                  <input style={s.input} value={ppNote} onChange={(e) => setPpNote(e.target.value)} placeholder="e.g. Paying via Stripe invoices monthly" />
+                </div>
+                <button onClick={() => onSavePaymentPlan({ payment_plan: true, payment_plan_note: ppNote.trim() })} disabled={saving} style={{ ...s.btn("primary"), padding: "8px 14px", fontSize: 12, marginBottom: 10 }}>{saving ? "…" : "Save"}</button>
+              </div>
+              {ledger?.payment_plan_note && ppNote === ledger.payment_plan_note && <div style={{ fontSize: 11, color: colors.success, marginTop: 2 }}>✓ Saved</div>}
+            </div>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <button onClick={() => { setShowPay(!showPay); setShowClear(false); }} style={{ ...s.btn("primary"), padding: "6px 14px", fontSize: 13 }}>Record Payment</button>
           {!ledger?.balance_cleared && balance > 0 && (<button onClick={() => { setShowClear(!showClear); setShowPay(false); }} style={{ ...s.btn("secondary"), padding: "6px 14px", fontSize: 13 }}>Clear Balance</button>)}
@@ -739,6 +764,10 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const [adminRole, setAdminRole] = useState("admin");
   const [waitlistApprovalRegs, setWaitlistApprovalRegs] = useState(null); // array of regs for modal
   const [waitlistApprovalSelected, setWaitlistApprovalSelected] = useState(new Set());
+  const [reminderModal, setReminderModal] = useState(null); // 'no_weeks' | 'outstanding_balance'
+  const [reminderPreview, setReminderPreview] = useState(null);
+  const [reminderSending, setReminderSending] = useState(false);
+  const [reminderResult, setReminderResult] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -959,6 +988,66 @@ export default function AdminDashboard({ user, setView, showToast }) {
     } finally { setSaving(false); }
   };
 
+  // ── Payment Plan Toggle ──
+  const handleSavePaymentPlan = async (data) => {
+    setSaving(true);
+    try {
+      const parentId = familyModal.id;
+      await sb.query("family_ledger", {
+        method: "PATCH",
+        body: { payment_plan: data.payment_plan, payment_plan_note: data.payment_plan_note || null, updated_at: new Date().toISOString() },
+        filters: `&parent_id=eq.${parentId}`,
+        headers: { Prefer: "return=minimal" },
+      });
+      showToast(data.payment_plan ? "Payment plan enabled." : "Payment plan removed.");
+      load();
+    } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); }
+  };
+
+  // ── Bulk Reminder Handlers ──
+  const handleReminderPreview = async (type) => {
+    setReminderModal(type);
+    setReminderPreview(null);
+    setReminderResult(null);
+    setReminderSending(true);
+    try {
+      const session = sb.supabase ? await sb.supabase.auth.getSession() : (sb.auth ? await sb.auth.getSession() : null);
+      const token = session?.data?.session?.access_token || "";
+      const res = await fetch("/.netlify/functions/send-bulk-reminder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ type, dry_run: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load preview");
+      setReminderPreview(data.recipients || []);
+    } catch (e) {
+      alert("Error loading preview: " + e.message);
+      setReminderModal(null);
+    } finally { setReminderSending(false); }
+  };
+
+  const handleReminderSend = async () => {
+    if (!reminderModal || !reminderPreview?.length) return;
+    if (!window.confirm(`Send ${reminderPreview.length} reminder email${reminderPreview.length !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+    setReminderSending(true);
+    try {
+      const session = sb.supabase ? await sb.supabase.auth.getSession() : (sb.auth ? await sb.auth.getSession() : null);
+      const token = session?.data?.session?.access_token || "";
+      const res = await fetch("/.netlify/functions/send-bulk-reminder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ type: reminderModal, dry_run: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      setReminderResult(data);
+      showToast(`Sent ${data.sent || 0} reminder email${data.sent !== 1 ? "s" : ""}!`);
+    } catch (e) {
+      alert("Error sending: " + e.message);
+    } finally { setReminderSending(false); }
+  };
+
   const filtered = registrations.filter((r) => {
     if (filterDivision !== "all" && r.division_id !== filterDivision) return false;
     if (filterStatus !== "all" && r.status !== filterStatus) return false;
@@ -1098,6 +1187,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
               <select style={{ ...s.input, width: "auto", minWidth: 140 }} value={filterBalance} onChange={(e) => setFilterBalance(e.target.value)}><option value="all">All Balances</option><option value="has_balance">Has Balance</option><option value="paid_up">Paid Up</option><option value="cleared">Cleared</option></select>
               <select style={{ ...s.input, width: "auto", minWidth: 120 }} value={filterElrc} onChange={(e) => setFilterElrc(e.target.value)}><option value="all">All Families</option><option value="elrc">ELRC</option><option value="non-elrc">Non-ELRC</option></select>
               <button onClick={exportFamiliesCSV} style={s.btn("secondary")}>{Icons.download({ size: 14 })} Export CSV</button>
+              {!isStaff && <button onClick={() => handleReminderPreview("no_weeks")} style={{ ...s.btn("secondary"), color: colors.amber, borderColor: colors.amber }}>📧 Remind: No Weeks</button>}
+              {!isStaff && <button onClick={() => handleReminderPreview("outstanding_balance")} style={{ ...s.btn("secondary"), color: colors.coral, borderColor: colors.coral }}>📧 Remind: Balance Due</button>}
             </div>
             <div style={{ fontSize: 14, color: colors.textMid, marginBottom: 12 }}>{filteredFamilies.length} of {parents.length} families</div>
             <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
@@ -1170,7 +1261,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
       {weekModal && <WeekModal week={weekModal === "create" ? null : weekModal} division={weekModalDivision} onClose={() => { setWeekModal(null); setWeekModalDivision(null); }} onSave={handleSaveWeek} saving={saving} />}
       {discountModal && <DiscountCodeModal code={discountModal === "create" ? null : discountModal} onClose={() => setDiscountModal(null)} onSave={async (data) => { setSaving(true); try { if (discountModal === "create") { await sb.query("discount_codes", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Discount code created!"); } else { await sb.query("discount_codes", { method: "PATCH", body: data, filters: `&id=eq.${discountModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Discount code updated!"); } setDiscountModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } }} saving={saving} />}
       {settingsModal && <SettingsModal settings={settings} onClose={() => setSettingsModal(false)} onSave={handleSaveSettings} saving={saving} />}
-      {familyModal && !adminChildModal && !registerChild && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRegisterChild={(kid) => setRegisterChild(kid)} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} saving={saving} isStaff={isStaff} />}
+      {familyModal && !adminChildModal && !registerChild && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRegisterChild={(kid) => setRegisterChild(kid)} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} onSavePaymentPlan={handleSavePaymentPlan} saving={saving} isStaff={isStaff} />}
       {adminChildModal && <AdminChildModal child={adminChildModal === "create" ? null : adminChildModal} parentId={adminChildParentId} divisions={divisions} onClose={() => { setAdminChildModal(null); setAdminChildParentId(null); }} onSave={handleSaveAdminChild} saving={saving} />}
       {registerChild && <RegisterModal child={registerChild} divisions={divisions} weeks={weeks} existingRegs={registrations.filter((r) => r.child_id === registerChild.id && r.status !== "cancelled")} settings={settings} siblingCount={children.filter((c) => c.parent_id === registerChild.parent_id).length} parent={parentMap[registerChild.parent_id]} onClose={() => setRegisterChild(null)} onRegister={handleAdminRegister} saving={saving} isAdmin={true} />}
 
@@ -1258,6 +1349,62 @@ export default function AdminDashboard({ user, setView, showToast }) {
           </Modal>
         );
       })()}
+
+      {/* ── Reminder Preview Modal ── */}
+      {reminderModal && (
+        <Modal title={reminderModal === "no_weeks" ? "Remind: Complete Registration" : "Remind: Outstanding Balance"} onClose={() => { setReminderModal(null); setReminderPreview(null); setReminderResult(null); }} width={600}>
+          {reminderSending && !reminderPreview && (
+            <div style={{ textAlign: "center", padding: "24px 0" }}><Spinner size={24} /><div style={{ marginTop: 8, fontSize: 13, color: colors.textMid }}>Loading recipients…</div></div>
+          )}
+          {reminderPreview && !reminderResult && (
+            <>
+              <div style={{ fontSize: 13, color: colors.textMid, marginBottom: 12 }}>
+                {reminderPreview.length === 0
+                  ? "No parents match the criteria right now. Everyone's either up to date, within the cooldown window, or on a payment plan."
+                  : `${reminderPreview.length} parent${reminderPreview.length !== 1 ? "s" : ""} will receive this reminder:`}
+              </div>
+              {reminderPreview.length > 0 && (
+                <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 16 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead><tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid }}>Parent</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid }}>Email</th>
+                      {reminderModal === "outstanding_balance" && <th style={{ padding: "8px 12px", textAlign: "right", fontSize: 12, fontWeight: 600, color: colors.textMid }}>Balance</th>}
+                    </tr></thead>
+                    <tbody>{reminderPreview.map((r) => (
+                      <tr key={r.parent_id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
+                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{r.full_name}</td>
+                        <td style={{ padding: "8px 12px", color: colors.textMid }}>{r.emails?.join(", ") || r.email}</td>
+                        {reminderModal === "outstanding_balance" && <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: colors.amber }}>${((r.balance_cents || 0) / 100).toFixed(0)}</td>}
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button onClick={() => { setReminderModal(null); setReminderPreview(null); }} style={s.btn("secondary")}>Cancel</button>
+                {reminderPreview.length > 0 && (
+                  <button onClick={handleReminderSend} disabled={reminderSending} style={s.btn("primary")}>
+                    {reminderSending ? <Spinner size={14} /> : `Send ${reminderPreview.length} Email${reminderPreview.length !== 1 ? "s" : ""}`}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+          {reminderResult && (
+            <>
+              <div style={{ textAlign: "center", padding: "16px 0" }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Sent {reminderResult.sent} email{reminderResult.sent !== 1 ? "s" : ""}!</div>
+                {reminderResult.failed > 0 && <div style={{ fontSize: 13, color: colors.coral }}>{reminderResult.failed} failed to send.</div>}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={() => { setReminderModal(null); setReminderPreview(null); setReminderResult(null); }} style={s.btn("primary")}>Done</button>
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
     </div>    
   );
 }
