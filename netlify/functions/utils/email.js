@@ -456,8 +456,8 @@ function completeRegistrationReminderEmail({ parentName }) {
   const body = `
     <h2 ${styles.heading}>Complete Your Registration</h2>
     <p ${styles.text}>Hi ${parentName},</p>
-    <p ${styles.text}>Thank you for starting the registration process and paying the registration fee!</p>
-    <p ${styles.text}>We noticed that you haven't yet selected weeks for your child(ren). Please log back in, choose which weeks you'd like to register for, and complete your payment.</p>
+    <p ${styles.text}>Thank you for creating an account on our new registration platform!</p>
+    <p ${styles.text}>We're so excited to have your family join us this summer! It looks like your child(ren's) registration hasn't been completed yet. Whenever you're ready, just log back in to select your weeks and complete your registration. Once done, payment can be made directly through the portal. If you'd prefer, we can also auto-charge your card on file. Just reply with the dates and amounts that work best for your family.</p>
     <p ${styles.text}>Please note that the early bird rate is available when paid in full by 10 Sivan (May 26th). After that date, pricing will increase.</p>
     <p style="text-align:center;">
       <a href="${REGISTER_URL}" ${styles.button}>Log In to Complete Registration &rarr;</a>
@@ -477,7 +477,7 @@ function balanceReminderEmail({ parentName, balanceCents }) {
     <p ${styles.text}>Hi ${parentName},</p>
     <p ${styles.text}>Thank you for registering for ${CAMP_NAME}!</p>
     <p ${styles.text}>Your registration is complete, but you have an outstanding balance of <strong>${formatCents(balanceCents)}</strong>. This total reflects the early bird rate, which is available when paid in full by 10 Sivan (May 26th). After that date, pricing will increase.</p>
-    <p ${styles.text}>Please note that in order to attend camp, payment must be completed or a payment plan must be in place with Rabbi Green.</p>
+    <p ${styles.text}>Please note that in order to attend camp, payment must be completed or a payment plan must be in place with Rabbi Green. If you'd like us to auto-charge your card on file, just reply with the dates you'd like your card charged.</p>
     <p style="text-align:center;">
       <a href="${REGISTER_URL}" ${styles.button}>Log In to Pay &rarr;</a>
     </p>
