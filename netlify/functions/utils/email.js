@@ -457,8 +457,8 @@ function completeRegistrationReminderEmail({ parentName }) {
     <h2 ${styles.heading}>Complete Your Registration</h2>
     <p ${styles.text}>Hi ${parentName},</p>
     <p ${styles.text}>Thank you for creating an account on our new registration platform!</p>
-    <p ${styles.text}>We're so excited to have your family join us this summer! It looks like your child(ren's) registration hasn't been completed yet. Whenever you're ready, just log back in to select your weeks and complete your registration. Once done, payment can be made directly through the portal. If you'd prefer, we can also auto-charge your card on file. Just reply with the dates and amounts that work best for your family.</p>
-    <p ${styles.text}>Please note that the early bird rate is available when paid in full by 10 Sivan (May 26th). After that date, pricing will increase.</p>
+    <p ${styles.text}>We are excited to have your family join us this summer. It looks like your registration is not yet complete. To ensure that your children have spots in camp, please log back in at your earliest convenience to select your weeks and complete registration. Once you're done, payment can be made directly through the portal. If you prefer to set up scheduled payments, please reply to this email with the payment amounts and dates that work best for you.</p>
+    <p ${styles.text}><strong>Please Note:</strong> The early bird rate is available for families who pay in full by 10 Sivan (May 26, 2026). After that date, pricing is at the usual rate.</p>
     <p style="text-align:center;">
       <a href="${REGISTER_URL}" ${styles.button}>Log In to Complete Registration &rarr;</a>
     </p>
@@ -476,8 +476,8 @@ function balanceReminderEmail({ parentName, balanceCents }) {
     <h2 ${styles.heading}>Outstanding Balance</h2>
     <p ${styles.text}>Hi ${parentName},</p>
     <p ${styles.text}>Thank you for registering for ${CAMP_NAME}!</p>
-    <p ${styles.text}>Your registration is complete, but you have an outstanding balance of <strong>${formatCents(balanceCents)}</strong>. This total reflects the early bird rate, which is available when paid in full by 10 Sivan (May 26th). After that date, pricing will increase.</p>
-    <p ${styles.text}>Please note that in order to attend camp, payment must be completed or a payment plan must be in place with Rabbi Green. If you'd like us to auto-charge your card on file, just reply with the dates you'd like your card charged.</p>
+    <p ${styles.text}>Your registration is complete, but you have an outstanding balance of <strong>${formatCents(balanceCents)}</strong>. This total reflects the early bird rate, which is available for balances that are paid in full by 10 Sivan (May 26, 2026). After that date, this discount will no longer be available.</p>
+    <p ${styles.text}><strong>Please Note:</strong> In order to attend camp, payment must be complete or a payment plan made with Rabbi Green. If you would like to set up scheduled payments, please reply to this email with the payment amounts and dates that work best for you.</p>
     <p style="text-align:center;">
       <a href="${REGISTER_URL}" ${styles.button}>Log In to Pay &rarr;</a>
     </p>
