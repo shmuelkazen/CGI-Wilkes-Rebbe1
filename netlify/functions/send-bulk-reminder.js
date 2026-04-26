@@ -78,7 +78,7 @@ const {
   async function getNoWeeksRecipients() {
     // Load all data (same pattern as admin dashboard — fine for small camp)
     const [parents, children, registrations, paymentLogs] = await Promise.all([
-      supabaseQuery("parents", { select: "id,full_name,email,additional_emails", filters: "&limit=5000" }),
+      supabaseQuery("parents", { select: "id,full_name,email,additional_emails,created_at", filters: "&limit=5000" }),
       supabaseQuery("children", { select: "id,parent_id", filters: "&limit=5000" }),
       supabaseQuery("registrations", { select: "id,child_id,status", filters: "&limit=10000" }),
       supabaseQuery("payment_log", { select: "id,parent_id,created_at", filters: "&order=created_at.desc&limit=10000" }),
@@ -113,13 +113,16 @@ const {
       // Must have at least one child
       if (!kids || kids.length === 0) continue;
   
-      // Must have at least one payment (reg fee)
+      // 48-hour cooldown: check most recent payment, or account creation if no payments
       const payments = paymentsByParent[parent.id];
-      if (!payments || payments.length === 0) continue;
-  
-      // Most recent payment must be > 48 hours old
-      const latestPayment = new Date(payments[0].created_at); // already sorted desc
-      if (latestPayment > cutoff48h) continue;
+      if (payments && payments.length > 0) {
+        const latestPayment = new Date(payments[0].created_at);
+        if (latestPayment > cutoff48h) continue;
+      } else {
+        // No payments — use account creation date as cooldown
+        const created = new Date(parent.created_at);
+        if (created > cutoff48h) continue;
+      }
   
       // None of their children should have non-cancelled registrations
       let hasRegistrations = false;
