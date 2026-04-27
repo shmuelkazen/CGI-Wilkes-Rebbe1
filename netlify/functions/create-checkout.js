@@ -181,8 +181,9 @@ exports.handler = async (event) => {
 
     const ledger = await supabaseQuery("family_ledger", { filters: `&parent_id=eq.${parentId}` });
     const totalPaid = (ledger && ledger[0]?.total_paid_cents) || 0;
+    const totalForgiven = (ledger && ledger[0]?.forgiven_cents) || 0;
 
-    const serverBalance = Math.max(0, calc.totalDue - totalCodeCredits - totalPaid);
+    const serverBalance = Math.max(0, calc.totalDue - totalCodeCredits - totalPaid - totalForgiven);
 
     // Validate requested amount against server-calculated balance
     if (amountCents > serverBalance) {

@@ -363,7 +363,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       const totalDue = Number(ledger?.total_due_cents) || 0;
       const totalPaid = Number(ledger?.total_paid_cents) || 0;
       const existingDiscounts = Number(ledger?.discount_amount_cents) || 0;
-      const currentBalance = totalDue - totalPaid;
+      const totalForgiven = Number(ledger?.forgiven_cents) || 0;
+      const currentBalance = totalDue - totalPaid - totalForgiven;
       if (currentBalance <= 0) { setDiscountError("No balance to apply discount to."); return; }
 
       let discountCents = 0;
@@ -583,7 +584,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
 
   const campName = settings.camp_name || "CGI Wilkes Rebbe";
   const campSeason = settings.camp_season || "Summer 2026 Registration";
-  const balanceDue = ledger ? (ledger.total_due_cents - ledger.total_paid_cents) : 0;
+  const balanceDue = ledger ? (ledger.total_due_cents - ledger.total_paid_cents - (ledger.forgiven_cents || 0)) : 0;
   const canRegister = !needsAddress && (!showRegFeeGate);
 
   return (
@@ -778,6 +779,12 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                     <span style={{ fontWeight: 600, color: colors.success }}>-${(ledger.total_paid_cents / 100).toFixed(2)}</span>
                   </div>
                 )}
+                {(ledger.forgiven_cents || 0) > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "4px 0" }}>
+                    <span style={{ color: colors.success }}>Scholarship applied</span>
+                    <span style={{ fontWeight: 600, color: colors.success }}>-${((ledger.forgiven_cents || 0) / 100).toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -880,11 +887,14 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
             </div>
           </div>
         )}
-        {ledger && ledger.balance_cleared && (
+        {ledger && (ledger.balance_cleared || ((ledger.forgiven_cents || 0) > 0 && balanceDue <= 0)) && (
           <div style={{ ...s.card, marginBottom: 24, border: `1px solid ${colors.success}`, background: colors.forestPale }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {Icons.check({ size: 18, color: colors.success })}
-              <span style={{ fontWeight: 700, fontSize: 16, color: colors.success }}>Balance Cleared</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {Icons.check({ size: 18, color: colors.success })}
+                <span style={{ fontWeight: 700, fontSize: 16, color: colors.success }}>Scholarship Applied</span>
+              </div>
+              {(ledger.forgiven_cents || 0) > 0 && <span style={{ fontFamily: font.display, fontSize: 18, color: colors.success }}>-${((ledger.forgiven_cents || 0) / 100).toFixed(0)}</span>}
             </div>
             {ledger.balance_cleared_reason && <div style={{ fontSize: 13, color: colors.textMid, marginTop: 4, marginLeft: 26 }}>{ledger.balance_cleared_reason}</div>}
           </div>
@@ -913,8 +923,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
                 const hasUnregisteredWeeks = unregisteredWeeks.length > 0;
 
                 // Family-level payment status
-                const familyPaid = ledger && (ledger.total_due_cents - ledger.total_paid_cents) <= 0 && !ledger.balance_cleared;
-                const familyCleared = ledger?.balance_cleared === true;
+                const familyPaid = ledger && (ledger.total_due_cents - ledger.total_paid_cents - (ledger.forgiven_cents || 0)) <= 0 && !ledger.balance_cleared;
+                const familyCleared = ledger?.balance_cleared === true || ((ledger?.forgiven_cents || 0) > 0 && (ledger?.total_due_cents - ledger?.total_paid_cents - (ledger?.forgiven_cents || 0)) <= 0);
                 const isPaidUp = familyPaid || familyCleared;
 
                 return (
