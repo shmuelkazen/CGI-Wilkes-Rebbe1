@@ -77,15 +77,25 @@ function getAllEmails(parent) {
 
 async function getNoWeeksRecipients() {
   // Load all data (same pattern as admin dashboard — fine for small camp)
-  const [parents, children, registrations, paymentLogs] = await Promise.all([
+  const [parents, children, registrations, paymentLogs, emailLogs] = await Promise.all([
     supabaseQuery("parents", { select: "id,full_name,email,additional_emails,created_at", filters: "&limit=5000" }),
     supabaseQuery("children", { select: "id,parent_id", filters: "&limit=5000" }),
     supabaseQuery("registrations", { select: "id,child_id,status", filters: "&limit=10000" }),
     supabaseQuery("payment_log", { select: "id,parent_id,created_at", filters: "&order=created_at.desc&limit=10000" }),
+    supabaseQuery("email_log", { select: "parent_id,reminder_type,sent_at", filters: "&reminder_type=eq.no_weeks&order=sent_at.desc&limit=5000" }),
   ]);
 
   const now = new Date();
   const cutoff48h = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+  const cutoff7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // Index email_log: most recent no_weeks email per parent
+  const lastEmailByParent = {};
+  for (const log of emailLogs) {
+    if (!lastEmailByParent[log.parent_id]) {
+      lastEmailByParent[log.parent_id] = new Date(log.sent_at);
+    }
+  }
 
   // Index data
   const childrenByParent = {};
@@ -124,6 +134,10 @@ async function getNoWeeksRecipients() {
       if (created > cutoff48h) continue;
     }
 
+    // 7-day email cooldown: skip if we already sent this reminder type recently
+    const lastEmail = lastEmailByParent[parent.id];
+    if (lastEmail && lastEmail > cutoff7d) continue;
+
     // None of their children should have non-cancelled registrations
     let hasRegistrations = false;
     for (const kid of kids) {
@@ -148,16 +162,26 @@ async function getNoWeeksRecipients() {
 }
 
 async function getOutstandingBalanceRecipients() {
-  const [parents, children, registrations, ledgers, paymentLogs] = await Promise.all([
+  const [parents, children, registrations, ledgers, paymentLogs, emailLogs] = await Promise.all([
     supabaseQuery("parents", { select: "id,full_name,email,additional_emails", filters: "&limit=5000" }),
     supabaseQuery("children", { select: "id,parent_id", filters: "&limit=5000" }),
     supabaseQuery("registrations", { select: "id,child_id,status", filters: "&limit=10000" }),
     supabaseQuery("family_ledger", { select: "parent_id,total_due_cents,total_paid_cents,forgiven_cents,balance_cleared,payment_plan,payment_plan_note" }),
     supabaseQuery("payment_log", { select: "id,parent_id,created_at", filters: "&order=created_at.desc&limit=10000" }),
+    supabaseQuery("email_log", { select: "parent_id,reminder_type,sent_at", filters: "&reminder_type=eq.outstanding_balance&order=sent_at.desc&limit=5000" }),
   ]);
 
   const now = new Date();
   const cutoff72h = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+  const cutoff7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // Index email_log: most recent outstanding_balance email per parent
+  const lastEmailByParent = {};
+  for (const log of emailLogs) {
+    if (!lastEmailByParent[log.parent_id]) {
+      lastEmailByParent[log.parent_id] = new Date(log.sent_at);
+    }
+  }
 
   // Index data
   const parentMap = Object.fromEntries(parents.map((p) => [p.id, p]));
@@ -210,12 +234,16 @@ async function getOutstandingBalanceRecipients() {
     }
     if (!hasActiveReg) continue;
 
-    // No payment in last 7 days
+    // No payment in last 72h
     const payments = paymentsByParent[ledger.parent_id] || [];
     if (payments.length > 0) {
       const latestPayment = new Date(payments[0].created_at);
       if (latestPayment > cutoff72h) continue;
     }
+
+    // 7-day email cooldown: skip if we already sent this reminder type recently
+    const lastEmail = lastEmailByParent[ledger.parent_id];
+    if (lastEmail && lastEmail > cutoff7d) continue;
 
     recipients.push({
       parent_id: parent.id,
