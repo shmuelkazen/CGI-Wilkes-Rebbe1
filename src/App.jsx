@@ -13,6 +13,10 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [toast, setToast] = useState(null);
   const [landingMode, setLandingMode] = useState("landing");
+  const [pendingView, setPendingView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("view") || null;
+  });
 
   const showToast = useCallback((msg) => setToast(msg), []);
 
@@ -22,7 +26,12 @@ export default function App() {
     await ensureParentProfile(u);
     const admin = await checkAdmin(u.id);
     setIsAdmin(admin);
-    setView(admin ? "admin" : "parent");
+    if (pendingView === "tshirts") {
+      setPendingView(null);
+      setView("tshirts");
+    } else {
+      setView(admin ? "admin" : "parent");
+    }
   };
 
   useEffect(() => {
