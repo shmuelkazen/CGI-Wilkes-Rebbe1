@@ -217,7 +217,7 @@ exports.handler = async (event) => {
                 stripe_payment_id: session.payment_intent,
                 updated_at: new Date().toISOString(),
               },
-              filters: `&id=eq.${shirtOrderId}`,
+              filters: `&id=in.(${shirtOrderId})`,
               headers: { Prefer: "return=minimal" },
             });
           }
@@ -225,10 +225,22 @@ exports.handler = async (event) => {
           console.log(`Shirt order paid for parent ${parentId}: $${(amountCents / 100).toFixed(2)}`);
 
           if (recipientEmails.length > 0) {
+            // Load the actual shirt order details for the receipt
+            let shirtItems = [];
+            if (shirtOrderId) {
+              const orders = await supabaseQuery("shirt_orders", {
+                filters: `&id=in.(${shirtOrderId})`,
+              });
+              shirtItems = (orders || []).map((o) => ({
+                size: `${o.shirt_type ? o.shirt_type + " " : ""}${o.size}`,
+                quantity: o.quantity,
+                priceEach: o.quantity > 0 ? Math.round(o.price_cents / o.quantity) : o.price_cents,
+              }));
+            }
             const emailContent = shirtOrderReceiptEmail({
               parentName: parentInfo.name,
               amountCents,
-              items: [],
+              items: shirtItems,
             });
             await sendEmail({
               to: recipientEmails,

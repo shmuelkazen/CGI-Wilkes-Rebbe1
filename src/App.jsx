@@ -5,6 +5,7 @@ import { Spinner, Toast } from "./components/UI";
 import LandingPage from "./components/LandingPage";
 import ParentDashboard from "./pages/ParentDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import TshirtPage from "./pages/TshirtPage";
 
 export default function App() {
   const [view, setView] = useState("loading");
@@ -99,6 +100,7 @@ export default function App() {
       )}
       {view === "parent" && user && <ParentDashboard user={user} isAdmin={isAdmin} setView={setView} showToast={showToast} />}
       {view === "admin" && user && <AdminDashboard user={user} setView={setView} showToast={showToast} />}
+      {view === "tshirts" && user && <TshirtPage user={user} setView={setView} showToast={showToast} />}
     </>
   );
 }
