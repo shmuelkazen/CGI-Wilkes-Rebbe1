@@ -771,6 +771,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const [reminderPreview, setReminderPreview] = useState(null);
   const [reminderSending, setReminderSending] = useState(false);
   const [reminderResult, setReminderResult] = useState(null);
+  const [revenuePanel, setRevenuePanel] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -1091,9 +1092,9 @@ export default function AdminDashboard({ user, setView, showToast }) {
           <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Confirmed</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.success }}>{totalConfirmed}</div></div>
           <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Pending</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>{totalPending}</div></div>
           {totalWaitlisted > 0 && <div style={{ ...s.card, border: `1px solid ${colors.amber}` }}><div style={{ fontSize: 12, color: colors.amber, fontWeight: 600, marginBottom: 4 }}>⏳ Waitlisted</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>{totalWaitlisted}</div></div>}
-          {!isStaff && <div style={s.card}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Revenue (Collected)</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.forest }}>${(totalRevenue / 100).toLocaleString()}</div></div>}
-          {!isStaff && totalForgiven > 0 && <div style={s.card}><div style={{ fontSize: 12, color: colors.success, fontWeight: 600, marginBottom: 4 }}>Scholarships</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.success }}>${(totalForgiven / 100).toLocaleString()}</div></div>}
-          {!isStaff && totalOutstanding > 0 && <div style={s.card}><div style={{ fontSize: 12, color: colors.amber, fontWeight: 600, marginBottom: 4 }}>Outstanding</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>${(totalOutstanding / 100).toLocaleString()}</div></div>}
+          {!isStaff && <div style={{ ...s.card, cursor: "pointer" }} onClick={() => setRevenuePanel(true)}><div style={{ fontSize: 12, color: colors.textMid, fontWeight: 600, marginBottom: 4 }}>Revenue (Collected)</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.forest }}>${(totalRevenue / 100).toLocaleString()}</div></div>}
+          {!isStaff && totalForgiven > 0 && <div style={{ ...s.card, cursor: "pointer" }} onClick={() => { setTab("families"); setFilterBalance("cleared"); }}><div style={{ fontSize: 12, color: colors.success, fontWeight: 600, marginBottom: 4 }}>Scholarships</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.success }}>${(totalForgiven / 100).toLocaleString()}</div></div>}
+          {!isStaff && totalOutstanding > 0 && <div style={{ ...s.card, cursor: "pointer" }} onClick={() => { setTab("families"); setFilterBalance("has_balance"); }}><div style={{ fontSize: 12, color: colors.amber, fontWeight: 600, marginBottom: 4 }}>Outstanding</div><div style={{ fontFamily: font.display, fontSize: 28, color: colors.amber }}>${(totalOutstanding / 100).toLocaleString()}</div></div>}
         </div>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0, flexWrap: "wrap" }}>
@@ -1185,7 +1186,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
           const filteredFamilies = parents.filter((p) => {
             if (familySearch) { const term = familySearch.toLowerCase(); const kids = children.filter((c) => c.parent_id === p.id); const haystack = `${p.full_name || ""} ${p.email || ""} ${kids.map((k) => `${k.first_name} ${k.last_name}`).join(" ")}`.toLowerCase(); if (!haystack.includes(term)) return false; }
             if (filterElrc !== "all") { if (filterElrc === "elrc" && !p.elrc_status) return false; if (filterElrc === "non-elrc" && p.elrc_status) return false; }
-            if (filterBalance !== "all") { const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const forg = ledger?.forgiven_cents || 0; const balance = due - paid - forg; const cleared = ledger?.balance_cleared || (forg > 0 && balance <= 0); if (filterBalance === "has_balance" && (balance <= 0 || cleared)) return false; if (filterBalance === "paid_up" && (balance > 0 && !cleared)) return false; if (filterBalance === "cleared" && !cleared) return false; }
+            if (filterBalance !== "all") { const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const forg = ledger?.forgiven_cents || 0; const balance = due - paid - forg; const cleared = ledger?.balance_cleared || (forg > 0 && balance <= 0); if (filterBalance === "has_balance" && (balance <= 0 || cleared)) return false; if (filterBalance === "paid_up" && (balance > 0 || due === 0 || cleared)) return false; if (filterBalance === "cleared" && !cleared) return false; }
             return true;
           });
           const exportFamiliesCSV = () => { const headers = ["Parent", "Email", "Phone", "Address", "Parent 2", "Parent 2 Phone", "ELRC", "Children", ...(!isStaff ? ["Total Due", "Paid", "Scholarship", "Balance", "Status"] : [])]; const rows = [headers]; filteredFamilies.forEach((p) => { const kids = children.filter((c) => c.parent_id === p.id); const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const forg = ledger?.forgiven_cents || 0; const balance = due - paid - forg; const cleared = ledger?.balance_cleared || (forg > 0 && balance <= 0); const status = cleared ? "Scholarship" : balance === 0 && due > 0 ? "Paid" : balance > 0 ? "Unpaid" : "—"; const addr = [p.street_address, p.city, p.state, p.zip].filter(Boolean).join(", ") || p.address || ""; const p2Name = [p.parent2_first_name, p.parent2_last_name].filter(Boolean).join(" "); rows.push([p.full_name || "", p.email || "", p.phone || "", addr, p2Name, p.parent2_phone || "", p.elrc_status ? "Yes" : "No", kids.map((k) => `${k.first_name} ${k.last_name}`).join("; ") || "—", ...(!isStaff ? [`$${(due / 100).toFixed(0)}`, `$${(paid / 100).toFixed(0)}`, forg > 0 ? `$${(forg / 100).toFixed(0)}` : "—", cleared ? "Scholarship" : `$${(balance / 100).toFixed(0)}`, status] : [])]); }); const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"); const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `cgi-families-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); showToast("Exported!"); };
@@ -1201,7 +1202,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
             <div style={{ fontSize: 14, color: colors.textMid, marginBottom: 12 }}>{filteredFamilies.length} of {parents.length} families</div>
             <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
               {filteredFamilies.length === 0 ? (<EmptyState icon={Icons.users} title="No families found" sub="Adjust your filters or wait for parents to register." />) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}><thead><tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>{["Parent", "Email", "Children", "ELRC", ...(!isStaff ? ["Total Due", "Paid", "Balance", "Status"] : []), "Actions"].map((h) => (<th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>))}</tr></thead>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}><thead><tr style={{ borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>{["Parent", "Email", "Children", "ELRC", ...(!isStaff ? ["Total Due", "Paid", "Scholarship", "Balance", "Status"] : []), "Actions"].map((h) => (<th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, color: colors.textMid, whiteSpace: "nowrap" }}>{h}</th>))}</tr></thead>
                 <tbody>{filteredFamilies.map((p) => { const kids = children.filter((c) => c.parent_id === p.id); const ledger = ledgerMap[p.id]; const due = ledger?.total_due_cents || 0; const paid = ledger?.total_paid_cents || 0; const forg = ledger?.forgiven_cents || 0; const balance = due - paid - forg; const cleared = ledger?.balance_cleared || (forg > 0 && balance <= 0); return (
                   <tr key={p.id} style={{ borderBottom: `1px solid ${colors.borderLight}` }}>
                     <td style={{ padding: "10px 14px", fontWeight: 600 }}>{p.full_name || "—"}{p.parent2_first_name && <div style={{ fontSize: 11, color: colors.textLight, fontWeight: 400 }}>P2: {p.parent2_first_name} {p.parent2_last_name}</div>}</td>
@@ -1210,7 +1211,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
                     <td style={{ padding: "10px 14px" }}>{p.elrc_status ? <span style={{ ...s.badge(colors.forest), fontSize: 11 }}>ELRC</span> : "—"}</td>
                     {!isStaff && <td style={{ padding: "10px 14px" }}>${(due / 100).toFixed(0)}</td>}
                     {!isStaff && <td style={{ padding: "10px 14px", color: colors.success }}>${(paid / 100).toFixed(0)}</td>}
-                    {!isStaff && <td style={{ padding: "10px 14px", fontWeight: 600, color: cleared ? colors.success : balance > 0 ? colors.amber : colors.success }}>{cleared ? "Scholarship" : `$${(balance / 100).toFixed(0)}`}</td>}
+                    {!isStaff && <td style={{ padding: "10px 14px", color: forg > 0 ? colors.success : colors.textLight }}>{forg > 0 ? `$${(forg / 100).toFixed(0)}` : "—"}</td>}
+                    {!isStaff && <td style={{ padding: "10px 14px", fontWeight: 600, color: balance > 0 ? colors.amber : colors.success }}>{`$${(balance / 100).toFixed(0)}`}</td>}
                     {!isStaff && <td style={{ padding: "10px 14px" }}>{cleared ? <StatusBadge status="confirmed" /> : balance === 0 && due > 0 ? <StatusBadge status="paid" /> : balance > 0 ? <StatusBadge status="unpaid" /> : "—"}</td>}
                     <td style={{ padding: "10px 14px" }}><button onClick={() => openFamily(p)} style={{ ...s.btn("ghost"), padding: "4px 8px", fontSize: 12, color: colors.forest }}>{Icons.users({ size: 13, color: colors.forest })} View</button></td>
                   </tr>); })}</tbody></table>
@@ -1413,6 +1415,62 @@ export default function AdminDashboard({ user, setView, showToast }) {
           )}
         </Modal>
       )}
+
+      {/* ═══ REVENUE PANEL MODAL ═══ */}
+      {revenuePanel && (() => {
+        const campPayments = ledgers.reduce((sum, l) => sum + (l.total_paid_cents || 0), 0);
+        const regFeePaid = ledgers.filter((l) => l.registration_fee_paid).length;
+        const regFeeEach = Number(settings.registration_fee_cents) || 0;
+        const regFeeTotal = regFeePaid * regFeeEach;
+        const shirtRevenue = shirtOrders.filter((o) => o.status === "paid" || o.status === "fulfilled").reduce((sum, o) => sum + (o.price_cents || 0), 0);
+        const grandTotal = regFeeTotal + campPayments + shirtRevenue;
+
+        const totalDueAll = ledgers.reduce((sum, l) => sum + (l.total_due_cents || 0), 0);
+        const totalForgivenAll = ledgers.reduce((sum, l) => sum + (l.forgiven_cents || 0), 0);
+        const totalOutstandingAll = ledgers.reduce((sum, l) => { const b = (l.total_due_cents || 0) - (l.total_paid_cents || 0) - (l.forgiven_cents || 0); return sum + Math.max(0, b); }, 0);
+
+        const collected = [
+          { label: "Registration Fees", detail: `${regFeePaid} families × $${(regFeeEach / 100).toFixed(0)}`, value: regFeeTotal },
+          { label: "Camp Payments", detail: "Stripe + offline", value: campPayments },
+          { label: "T-Shirt Orders", detail: `${shirtOrders.filter((o) => o.status === "paid" || o.status === "fulfilled").length} orders`, value: shirtRevenue },
+        ];
+
+        return (
+          <Modal title="Revenue Breakdown" onClose={() => setRevenuePanel(false)} width={540}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: colors.textMid, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Collected</div>
+            <div style={{ display: "grid", gap: 0, marginBottom: 8 }}>
+              {collected.map((r) => (
+                <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${colors.borderLight}` }}>
+                  <div><div style={{ fontSize: 14, fontWeight: 600 }}>{r.label}</div><div style={{ fontSize: 12, color: colors.textMid }}>{r.detail}</div></div>
+                  <span style={{ fontFamily: font.display, fontSize: 20, color: colors.forest, fontWeight: 700 }}>${(r.value / 100).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderTop: `2px solid ${colors.forest}` }}>
+              <span style={{ fontSize: 15, fontWeight: 700 }}>Total Collected</span>
+              <span style={{ fontFamily: font.display, fontSize: 24, color: colors.forest, fontWeight: 700 }}>${(grandTotal / 100).toLocaleString()}</span>
+            </div>
+
+            <div style={{ fontSize: 13, fontWeight: 700, color: colors.textMid, marginTop: 20, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Balances</div>
+            <div style={{ display: "grid", gap: 0 }}>
+              {[
+                { label: "Total Billed (Camp Fees)", value: totalDueAll, color: colors.text },
+                { label: "Scholarships Applied", value: totalForgivenAll, color: colors.success },
+                { label: "Outstanding", value: totalOutstandingAll, color: colors.amber },
+              ].map((r) => (
+                <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${colors.borderLight}` }}>
+                  <span style={{ fontSize: 14, color: colors.textMid }}>{r.label}</span>
+                  <span style={{ fontFamily: font.display, fontSize: 18, color: r.color, fontWeight: 700 }}>${(r.value / 100).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setRevenuePanel(false)} style={s.btn("primary")}>Done</button>
+            </div>
+          </Modal>
+        );
+      })()}
     </div>    
   );
 }
