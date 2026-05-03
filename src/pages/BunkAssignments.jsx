@@ -494,9 +494,7 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
             </div>
             {/* Bunk buttons row — horizontally scrollable */}
             <div style={{
-              display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4,
-              WebkitOverflowScrolling: "touch",
-              msOverflowStyle: "none", scrollbarWidth: "none",
+              display: "flex", gap: 8, flexWrap: "wrap",
             }}>
               {bunks.map((bunk) => {
                 const bunkCount = assignments.filter((a) => a.bunk_id === bunk.id).length;
