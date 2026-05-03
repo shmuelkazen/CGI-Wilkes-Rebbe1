@@ -378,7 +378,7 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
       ) : !selWeek ? (
         <div style={{ padding: 40, textAlign: "center", color: colors.textMid }}>Select a week to manage bunk assignments.</div>
       ) : (
-        <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
           {/* ── LEFT: Unassigned ── */}
           <div
             onDragEnter={(e) => handleDragEnter(e, "pool")}
@@ -386,11 +386,10 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
             onDragLeave={(e) => handleDragLeave(e, "pool")}
             onDrop={handleDropUnassign}
             style={{
-              width: 280, minWidth: 240, flexShrink: 0,
+              flex: "1 1 260px", maxWidth: 340,
               background: dragOverBunk === "pool" ? colors.amberLight : colors.bg,
               border: `2px dashed ${dragOverBunk === "pool" ? colors.amber : colors.border}`,
               borderRadius: 12, padding: 16, transition: "all .15s",
-              maxHeight: "calc(100vh - 280px)", overflowY: "auto",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
@@ -412,7 +411,7 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
           </div>
 
           {/* ── RIGHT: Bunks ── */}
-          <div style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start", alignContent: "flex-start" }}>
+          <div style={{ flex: "1 1 400px", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start", alignContent: "flex-start" }}>
             {bunks.length === 0 ? (
               <div style={{ padding: 40, textAlign: "center", color: colors.textMid, width: "100%" }}>No bunks yet — create one to get started.</div>
             ) : bunks.map((bunk) => {
