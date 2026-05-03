@@ -1,7 +1,7 @@
 // ============================================================
 // BUNK ASSIGNMENTS — Multi-select drag-and-drop bunk management
 // ============================================================
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import sb from "../lib/supabase";
 import { colors, s, font } from "../lib/styles";
 import Icons from "../lib/icons";
@@ -28,6 +28,7 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
   const [dragActive, setDragActive] = useState(false);
   const [dragOverBunk, setDragOverBunk] = useState(null);
   const dragIdsRef = useRef([]);
+  const dragEnterCount = useRef({});
 
   // ── Derived data ──
   const divWeeks = weeks.filter((w) => w.division_id === selDiv);
@@ -43,6 +44,12 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
 
   const assignedIds = new Set(assignments.map((a) => a.child_id));
   const unassigned = divChildren.filter((c) => !assignedIds.has(c.id));
+
+  // Track whether any selected kids are currently assigned (for "Unassign" button)
+  const hasAssignedSelected = useMemo(
+    () => [...selected].some((id) => assignedIds.has(id)),
+    [selected, assignedIds]
+  );
 
   // ── Load bunks + assignments ──
   const loadBunks = useCallback(async () => {
@@ -203,7 +210,7 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
     a.click(); URL.revokeObjectURL(url);
   };
 
-  // ── Drag handlers (multi-aware) ──
+  // ── Drag handlers (desktop — flicker-fixed with enter/leave counter) ──
   const handleDragStart = (e, childId) => {
     let ids;
     if (selected.has(childId) && selected.size > 1) {
@@ -213,6 +220,7 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
       setSelected(new Set([childId]));
     }
     dragIdsRef.current = ids;
+    dragEnterCount.current = {};
     setDragActive(true);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", JSON.stringify(ids));
@@ -225,28 +233,62 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
       setTimeout(() => document.body.removeChild(badge), 0);
     }
   };
-  const handleDragOver = (e, bunkId) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverBunk(bunkId); };
-  const handleDragLeave = () => setDragOverBunk(null);
+
+  const handleDragEnter = (e, zoneId) => {
+    e.preventDefault();
+    dragEnterCount.current[zoneId] = (dragEnterCount.current[zoneId] || 0) + 1;
+    setDragOverBunk(zoneId);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDragLeave = (e, zoneId) => {
+    dragEnterCount.current[zoneId] = (dragEnterCount.current[zoneId] || 0) - 1;
+    if (dragEnterCount.current[zoneId] <= 0) {
+      dragEnterCount.current[zoneId] = 0;
+      // Only clear if we're leaving the zone that's currently highlighted
+      setDragOverBunk((prev) => (prev === zoneId ? null : prev));
+    }
+  };
+
   const handleDrop = (e, bunkId) => {
-    e.preventDefault(); setDragOverBunk(null); setDragActive(false);
+    e.preventDefault();
+    dragEnterCount.current = {};
+    setDragOverBunk(null);
+    setDragActive(false);
     const ids = dragIdsRef.current;
     if (ids?.length && bunkId) bulkAssign(ids, bunkId);
     dragIdsRef.current = [];
   };
+
   const handleDropUnassign = (e) => {
-    e.preventDefault(); setDragOverBunk(null); setDragActive(false);
+    e.preventDefault();
+    dragEnterCount.current = {};
+    setDragOverBunk(null);
+    setDragActive(false);
     const ids = dragIdsRef.current;
     if (ids?.length) bulkUnassign(ids);
     dragIdsRef.current = [];
   };
-  const handleDragEnd = () => { setDragActive(false); setDragOverBunk(null); };
+
+  const handleDragEnd = () => {
+    setDragActive(false);
+    setDragOverBunk(null);
+    dragEnterCount.current = {};
+  };
 
   // ── Child pill ──
   const ChildPill = ({ child }) => {
     const isSel = selected.has(child.id);
     const isDragging = dragActive && isSel;
     return (
-      <div draggable onDragStart={(e) => handleDragStart(e, child.id)} onDragEnd={handleDragEnd}
+      <div
+        draggable
+        onDragStart={(e) => handleDragStart(e, child.id)}
+        onDragEnd={handleDragEnd}
         onClick={(e) => { e.stopPropagation(); toggleSelect(child.id, e); }}
         style={{
           display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8,
@@ -254,7 +296,9 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
           border: `2px solid ${isSel ? colors.forest : colors.border}`,
           cursor: "grab", fontSize: 13, fontWeight: 500,
           opacity: isDragging ? 0.4 : 1, transition: "all .1s", userSelect: "none",
-        }}>
+          WebkitUserSelect: "none", WebkitTouchCallout: "none",
+        }}
+      >
         <div style={{
           width: 16, height: 16, borderRadius: 4, flexShrink: 0,
           border: `2px solid ${isSel ? colors.forest : colors.border}`,
@@ -274,8 +318,10 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
 
   if (!selDiv) return <div style={{ padding: 40, textAlign: "center", color: colors.textMid }}>No divisions configured yet.</div>;
 
+  const selectedArr = [...selected];
+
   return (
-    <div>
+    <div style={{ paddingBottom: selected.size > 0 ? 80 : 0, transition: "padding .2s" }}>
       {/* ── Header ── */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", marginBottom: 20 }}>
         <div>
@@ -334,14 +380,19 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
       ) : (
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
           {/* ── LEFT: Unassigned ── */}
-          <div onDragOver={(e) => { e.preventDefault(); setDragOverBunk("pool"); }} onDragLeave={() => setDragOverBunk(null)} onDrop={handleDropUnassign}
+          <div
+            onDragEnter={(e) => handleDragEnter(e, "pool")}
+            onDragOver={handleDragOver}
+            onDragLeave={(e) => handleDragLeave(e, "pool")}
+            onDrop={handleDropUnassign}
             style={{
               width: 280, minWidth: 240, flexShrink: 0,
               background: dragOverBunk === "pool" ? colors.amberLight : colors.bg,
               border: `2px dashed ${dragOverBunk === "pool" ? colors.amber : colors.border}`,
               borderRadius: 12, padding: 16, transition: "all .15s",
               maxHeight: "calc(100vh - 280px)", overflowY: "auto",
-            }}>
+            }}
+          >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: colors.textMid, textTransform: "uppercase", letterSpacing: ".04em" }}>
                 Unassigned ({unassigned.length})
@@ -368,14 +419,21 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
               const bunkKids = assignments.filter((a) => a.bunk_id === bunk.id).map((a) => children.find((c) => c.id === a.child_id)).filter(Boolean).sort((a, b) => a.last_name.localeCompare(b.last_name));
               const atCapacity = isPreschool && bunk.capacity && bunkKids.length >= bunk.capacity;
               const isOver = dragOverBunk === bunk.id;
+              const showAssignHere = selected.size > 0 && !saving;
               return (
-                <div key={bunk.id} onDragOver={(e) => handleDragOver(e, bunk.id)} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, bunk.id)}
+                <div
+                  key={bunk.id}
+                  onDragEnter={(e) => handleDragEnter(e, bunk.id)}
+                  onDragOver={handleDragOver}
+                  onDragLeave={(e) => handleDragLeave(e, bunk.id)}
+                  onDrop={(e) => handleDrop(e, bunk.id)}
                   style={{
                     ...s.card, width: "calc(50% - 8px)", minWidth: 280, padding: 0, overflow: "hidden",
                     border: `2px solid ${isOver ? (atCapacity ? colors.coral : colors.forest) : colors.border}`,
                     background: isOver ? (atCapacity ? colors.coralLight : colors.forestPale) : colors.white,
                     transition: "all .15s",
-                  }}>
+                  }}
+                >
                   <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${colors.borderLight}`, background: colors.bg }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontFamily: font.display, fontSize: 17, color: colors.forest }}>{bunk.name}</div>
@@ -391,12 +449,82 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
                   </div>
                   <div style={{ padding: 12, minHeight: 48, display: "flex", flexDirection: "column", gap: 4 }}>
                     {bunkKids.length === 0 ? (
-                      <div style={{ fontSize: 13, color: colors.textLight, textAlign: "center", padding: "12px 0" }}>Drag kids here</div>
+                      <div style={{ fontSize: 13, color: colors.textLight, textAlign: "center", padding: "12px 0" }}>
+                        {showAssignHere ? "Tap below to assign here" : "Drag kids here"}
+                      </div>
                     ) : bunkKids.map((c) => <ChildPill key={c.id} child={c} />)}
                   </div>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Sticky Action Bar (appears when kids are selected) ── */}
+      {selected.size > 0 && selWeek && !loading && (
+        <div style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
+          background: colors.white, borderTop: `2px solid ${colors.forest}`,
+          boxShadow: "0 -4px 20px rgba(0,0,0,0.12)",
+          padding: "10px 16px",
+          animation: "slideUp .2s ease-out",
+        }}>
+          <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
+          <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+            {/* Top row: selection info + clear/unassign */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: colors.forest }}>
+                {selected.size} selected
+              </span>
+              <span style={{ fontSize: 12, color: colors.textLight }}>— tap a bunk to assign</span>
+              <div style={{ flex: 1 }} />
+              {hasAssignedSelected && (
+                <button
+                  onClick={() => bulkUnassign(selectedArr.filter((id) => assignedIds.has(id)))}
+                  disabled={saving}
+                  style={{ ...s.btn("secondary"), fontSize: 12, padding: "5px 12px", color: colors.coral, borderColor: colors.coral }}
+                >
+                  Unassign
+                </button>
+              )}
+              <button onClick={clearSelection} style={{ ...s.btn("ghost"), fontSize: 12, padding: "5px 10px", color: colors.textMid }}>
+                Clear
+              </button>
+            </div>
+            {/* Bunk buttons row — horizontally scrollable */}
+            <div style={{
+              display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4,
+              WebkitOverflowScrolling: "touch",
+              msOverflowStyle: "none", scrollbarWidth: "none",
+            }}>
+              {bunks.map((bunk) => {
+                const bunkCount = assignments.filter((a) => a.bunk_id === bunk.id).length;
+                const atCap = isPreschool && bunk.capacity && bunkCount >= bunk.capacity;
+                return (
+                  <button
+                    key={bunk.id}
+                    onClick={() => bulkAssign(selectedArr, bunk.id)}
+                    disabled={saving || atCap}
+                    style={{
+                      flexShrink: 0, padding: "8px 16px", borderRadius: 8,
+                      fontSize: 13, fontWeight: 600, cursor: atCap ? "not-allowed" : "pointer",
+                      border: `2px solid ${atCap ? colors.border : colors.forest}`,
+                      background: atCap ? colors.bg : colors.forestPale,
+                      color: atCap ? colors.textLight : colors.forest,
+                      opacity: saving ? 0.6 : 1, transition: "all .15s",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {bunk.name}
+                    {isPreschool && bunk.capacity
+                      ? ` (${bunkCount}/${bunk.capacity})`
+                      : ` (${bunkCount})`
+                    }
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
