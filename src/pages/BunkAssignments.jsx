@@ -8,6 +8,7 @@ import Icons from "../lib/icons";
 import { Spinner, Modal } from "../components/UI";
 
 const fmt = (d) => d ? new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+const fmtDob = (d) => d ? new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }) : "";
 const age = (dob) => {
   if (!dob) return "";
   const b = new Date(dob + "T00:00:00"), now = new Date();
@@ -320,7 +321,7 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
           <span style={{ fontSize: 10, fontWeight: 700, color: colors.amber, background: colors.amberLight, padding: "1px 6px", borderRadius: 4, letterSpacing: ".03em", textTransform: "uppercase", flexShrink: 0 }}>Waitlisted</span>
         )}
         <span style={{ fontSize: 11, color: colors.textLight, fontWeight: 400, marginLeft: "auto", whiteSpace: "nowrap" }}>
-          {child.date_of_birth ? `${fmt(child.date_of_birth)} (${age(child.date_of_birth)}y)` : ""}
+          {child.date_of_birth ? `${fmtDob(child.date_of_birth)} (${age(child.date_of_birth)}y)` : ""}
         </span>
       </div>
     );
