@@ -42,6 +42,13 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
     .filter((c) => registeredChildIds.includes(c.id))
     .sort((a, b) => (a.date_of_birth || "").localeCompare(b.date_of_birth || "") || a.first_name.localeCompare(b.first_name));
 
+  const statusMap = useMemo(() => {
+    const m = new Map();
+    registrations.filter((r) => r.division_id === selDiv && r.week_id === selWeek && r.status !== "cancelled")
+      .forEach((r) => m.set(r.child_id, r.status));
+    return m;
+  }, [registrations, selDiv, selWeek]);
+
   const assignedIds = new Set(assignments.map((a) => a.child_id));
   const unassigned = divChildren.filter((c) => !assignedIds.has(c.id));
 
@@ -309,8 +316,11 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
         </div>
         <span style={{ color: colors.text }}>{child.first_name} {child.last_name}</span>
         {child.grade != null && <span style={{ fontSize: 11, color: colors.textLight, fontWeight: 400 }}>G{child.grade}</span>}
-        <span style={{ fontSize: 11, color: colors.textLight, fontWeight: 400, marginLeft: "auto" }}>
-          {age(child.date_of_birth) ? `${age(child.date_of_birth)}y` : ""}
+        {statusMap.get(child.id) === "waitlisted" && (
+          <span style={{ fontSize: 10, fontWeight: 700, color: colors.amber, background: colors.amberLight, padding: "1px 6px", borderRadius: 4, letterSpacing: ".03em", textTransform: "uppercase", flexShrink: 0 }}>Waitlisted</span>
+        )}
+        <span style={{ fontSize: 11, color: colors.textLight, fontWeight: 400, marginLeft: "auto", whiteSpace: "nowrap" }}>
+          {child.date_of_birth ? `${fmt(child.date_of_birth)} (${age(child.date_of_birth)}y)` : ""}
         </span>
       </div>
     );
