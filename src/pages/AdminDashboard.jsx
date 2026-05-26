@@ -391,7 +391,7 @@ function SettingsModal({ settings, onClose, onSave, saving }) {
 // ============================================================
 // FAMILY LEDGER MODAL
 // ============================================================
-function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRegisterChild, onRecordPayment, onClearBalance, onSavePaymentPlan, saving, isStaff }) {
+function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, weekMap, divisionMap, ledger, payments, onClose, onSaveParent, onEditChild, onAddChild, onRegisterChild, onRecordPayment, onClearBalance, onSavePaymentPlan, onToggleEarlyBird, saving, isStaff }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ full_name: parent?.full_name || "", phone: parent?.phone || "", street_address: parent?.street_address || "", city: parent?.city || "Kingston", state: parent?.state || "PA", zip: parent?.zip || "18704", parent2_first_name: parent?.parent2_first_name || "", parent2_last_name: parent?.parent2_last_name || "", parent2_phone: parent?.parent2_phone || "", elrc_status: parent?.elrc_status ?? false });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -408,6 +408,7 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
   const [ppToggle, setPpToggle] = useState(ledger?.payment_plan || false);
   const [ppNote, setPpNote] = useState(ledger?.payment_plan_note || "");
   const [showPpNote, setShowPpNote] = useState(!!(ledger?.payment_plan));
+  const [ebToggle, setEbToggle] = useState(ledger?.early_bird_locked || false);
   const forgiven = ledger?.forgiven_cents || 0;
   const balance = (ledger?.total_due_cents || 0) - (ledger?.total_paid_cents || 0) - forgiven;
 
@@ -541,6 +542,14 @@ function FamilyModal({ parent, familyChildren, divisions, registrations, weeks, 
               {ledger?.payment_plan_note && ppNote === ledger.payment_plan_note && <div style={{ fontSize: 11, color: colors.success, marginTop: 2 }}>✓ Saved</div>}
             </div>
           )}
+        </div>
+        {/* ── Early Bird Lock Toggle ── */}
+        <div style={{ ...s.card, marginBottom: 14, border: `1px solid ${ebToggle ? colors.success : colors.border}`, background: ebToggle ? colors.forestPale : colors.card }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            <input type="checkbox" checked={ebToggle} onChange={(e) => { const val = e.target.checked; setEbToggle(val); onToggleEarlyBird(val); }} />
+            Early Bird Locked In
+          </label>
+          <div style={{ fontSize: 11, color: ebToggle ? colors.success : colors.textLight, marginTop: 4, marginLeft: 26 }}>{ebToggle ? "✓ This family keeps early bird pricing permanently" : "Auto-set when paid in full before deadline, or toggle manually"}</div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <button onClick={() => { setShowPay(!showPay); setShowClear(false); }} style={{ ...s.btn("primary"), padding: "6px 14px", fontSize: 13 }}>Record Payment</button>
@@ -943,8 +952,8 @@ export default function AdminDashboard({ user, setView, showToast }) {
   const handleSaveSettings = async (data) => { setSaving(true); try { for (const [key, value] of Object.entries(data)) { const jsonVal = JSON.stringify(value); const existing = await sb.query("camp_settings", { filters: `&key=eq.${key}` }); if (existing && existing.length > 0) { await sb.query("camp_settings", { method: "PATCH", body: { value: jsonVal, updated_at: new Date().toISOString() }, filters: `&key=eq.${key}`, headers: { Prefer: "return=minimal" } }); } else { await sb.query("camp_settings", { method: "POST", body: { key, value: jsonVal }, headers: { Prefer: "return=minimal" } }); } } showToast("Settings saved!"); setSettingsModal(false); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
 
   const openFamily = async (parent) => { try { const payments = await sb.query("payment_log", { filters: `&parent_id=eq.${parent.id}&order=created_at.desc` }); setLedgerPayments(payments || []); } catch { setLedgerPayments([]); } setFamilyModal(parent); };
-  const handleRecordPayment = async (data) => { setSaving(true); try { const parentId = familyModal.id; await sb.query("payment_log", { method: "POST", body: { parent_id: parentId, amount_cents: data.amount_cents, method: data.method, notes: data.notes, recorded_by: user.id }, headers: { Prefer: "return=minimal" } }); const ledger = ledgerMap[parentId]; if (ledger) { await sb.query("family_ledger", { method: "PATCH", body: { total_paid_cents: (ledger.total_paid_cents || 0) + data.amount_cents, updated_at: new Date().toISOString() }, filters: `&parent_id=eq.${parentId}`, headers: { Prefer: "return=minimal" } }); } showToast("Payment recorded!"); load(); openFamily(familyModal); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
-  const handleClearBalance = async ({ reason, amount_cents }) => { setSaving(true); try { const parentId = familyModal.id; const ledger = ledgerMap[parentId]; const currentForgiven = ledger?.forgiven_cents || 0; const newForgiven = currentForgiven + amount_cents; const remainingAfter = (ledger?.total_due_cents || 0) - (ledger?.total_paid_cents || 0) - newForgiven; const isFullForgiveness = remainingAfter <= 0; const patchBody = { forgiven_cents: newForgiven, balance_cleared_reason: reason, balance_cleared_by: user.id, balance_cleared_at: new Date().toISOString(), updated_at: new Date().toISOString() }; if (isFullForgiveness) patchBody.balance_cleared = true; await sb.query("family_ledger", { method: "PATCH", body: patchBody, filters: `&parent_id=eq.${parentId}`, headers: { Prefer: "return=minimal" } }); await sb.query("payment_log", { method: "POST", body: { parent_id: parentId, amount_cents, method: "forgiveness", notes: `Scholarship: ${reason}`, recorded_by: user.id }, headers: { Prefer: "return=minimal" } }); showToast(isFullForgiveness ? "Scholarship applied — balance cleared!" : `Scholarship of $${(amount_cents / 100).toFixed(0)} applied!`); load(); openFamily(familyModal); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
+  const handleRecordPayment = async (data) => { setSaving(true); try { const parentId = familyModal.id; await sb.query("payment_log", { method: "POST", body: { parent_id: parentId, amount_cents: data.amount_cents, method: data.method, notes: data.notes, recorded_by: user.id }, headers: { Prefer: "return=minimal" } }); const ledger = ledgerMap[parentId]; if (ledger) { const newPaid = (ledger.total_paid_cents || 0) + data.amount_cents; const patchBody = { total_paid_cents: newPaid, updated_at: new Date().toISOString() }; const newBalance = (ledger.total_due_cents || 0) - newPaid - (ledger.forgiven_cents || 0); const ebDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null; if (ebDeadline && new Date() < ebDeadline && newBalance <= 0 && (ledger.total_due_cents || 0) > 0 && !ledger.early_bird_locked) { patchBody.early_bird_locked = true; } await sb.query("family_ledger", { method: "PATCH", body: patchBody, filters: `&parent_id=eq.${parentId}`, headers: { Prefer: "return=minimal" } }); } showToast("Payment recorded!"); load(); openFamily(familyModal); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
+  const handleClearBalance = async ({ reason, amount_cents }) => { setSaving(true); try { const parentId = familyModal.id; const ledger = ledgerMap[parentId]; const currentForgiven = ledger?.forgiven_cents || 0; const newForgiven = currentForgiven + amount_cents; const remainingAfter = (ledger?.total_due_cents || 0) - (ledger?.total_paid_cents || 0) - newForgiven; const isFullForgiveness = remainingAfter <= 0; const patchBody = { forgiven_cents: newForgiven, balance_cleared_reason: reason, balance_cleared_by: user.id, balance_cleared_at: new Date().toISOString(), updated_at: new Date().toISOString() }; if (isFullForgiveness) patchBody.balance_cleared = true; const ebDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null; if (ebDeadline && new Date() < ebDeadline && isFullForgiveness && (ledger?.total_due_cents || 0) > 0 && !ledger?.early_bird_locked) { patchBody.early_bird_locked = true; } await sb.query("family_ledger", { method: "PATCH", body: patchBody, filters: `&parent_id=eq.${parentId}`, headers: { Prefer: "return=minimal" } }); await sb.query("payment_log", { method: "POST", body: { parent_id: parentId, amount_cents, method: "forgiveness", notes: `Scholarship: ${reason}`, recorded_by: user.id }, headers: { Prefer: "return=minimal" } }); showToast(isFullForgiveness ? "Scholarship applied — balance cleared!" : `Scholarship of $${(amount_cents / 100).toFixed(0)} applied!`); load(); openFamily(familyModal); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
 
   const handleSaveFamily = async (data) => { setSaving(true); try { await sb.query("parents", { method: "PATCH", body: { ...data, updated_at: new Date().toISOString() }, filters: `&id=eq.${familyModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Family updated!"); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
   const handleSaveAdminChild = async (data) => { setSaving(true); try { if (adminChildModal && adminChildModal !== "create") { const { parent_id, ...updateData } = data; await sb.query("children", { method: "PATCH", body: { ...updateData, updated_at: new Date().toISOString() }, filters: `&id=eq.${adminChildModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Child updated!"); } else { await sb.query("children", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Child added!"); } setAdminChildModal(null); setAdminChildParentId(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } };
@@ -1005,6 +1014,22 @@ export default function AdminDashboard({ user, setView, showToast }) {
       });
       showToast(data.payment_plan ? "Payment plan enabled." : "Payment plan removed.");
       load();
+    } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); }
+  };
+
+  const handleToggleEarlyBird = async (locked) => {
+    setSaving(true);
+    try {
+      const parentId = familyModal.id;
+      await sb.query("family_ledger", {
+        method: "PATCH",
+        body: { early_bird_locked: locked, updated_at: new Date().toISOString() },
+        filters: `&parent_id=eq.${parentId}`,
+        headers: { Prefer: "return=minimal" },
+      });
+      showToast(locked ? "Early bird locked in." : "Early bird removed.");
+      load();
+      openFamily(familyModal);
     } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); }
   };
 
@@ -1267,7 +1292,7 @@ export default function AdminDashboard({ user, setView, showToast }) {
       {weekModal && <WeekModal week={weekModal === "create" ? null : weekModal} division={weekModalDivision} onClose={() => { setWeekModal(null); setWeekModalDivision(null); }} onSave={handleSaveWeek} saving={saving} />}
       {discountModal && <DiscountCodeModal code={discountModal === "create" ? null : discountModal} onClose={() => setDiscountModal(null)} onSave={async (data) => { setSaving(true); try { if (discountModal === "create") { await sb.query("discount_codes", { method: "POST", body: data, headers: { Prefer: "return=minimal" } }); showToast("Discount code created!"); } else { await sb.query("discount_codes", { method: "PATCH", body: data, filters: `&id=eq.${discountModal.id}`, headers: { Prefer: "return=minimal" } }); showToast("Discount code updated!"); } setDiscountModal(null); load(); } catch (e) { alert("Error: " + e.message); } finally { setSaving(false); } }} saving={saving} />}
       {settingsModal && <SettingsModal settings={settings} onClose={() => setSettingsModal(false)} onSave={handleSaveSettings} saving={saving} />}
-      {familyModal && !adminChildModal && !registerChild && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRegisterChild={(kid) => setRegisterChild(kid)} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} onSavePaymentPlan={handleSavePaymentPlan} saving={saving} isStaff={isStaff} />}
+      {familyModal && !adminChildModal && !registerChild && <FamilyModal parent={familyModal} familyChildren={children.filter((c) => c.parent_id === familyModal.id)} divisions={divisions} registrations={registrations} weeks={weeks} weekMap={weekMap} divisionMap={divisionMap} ledger={ledgerMap[familyModal.id]} payments={ledgerPayments} onClose={() => { setFamilyModal(null); setLedgerPayments([]); }} onSaveParent={(data) => handleSaveFamily(data)} onEditChild={(kid) => { setAdminChildParentId(familyModal.id); setAdminChildModal(kid); }} onAddChild={() => { setAdminChildParentId(familyModal.id); setAdminChildModal("create"); }} onRegisterChild={(kid) => setRegisterChild(kid)} onRecordPayment={handleRecordPayment} onClearBalance={handleClearBalance} onSavePaymentPlan={handleSavePaymentPlan} onToggleEarlyBird={handleToggleEarlyBird} saving={saving} isStaff={isStaff} />}
       {adminChildModal && <AdminChildModal child={adminChildModal === "create" ? null : adminChildModal} parentId={adminChildParentId} divisions={divisions} onClose={() => { setAdminChildModal(null); setAdminChildParentId(null); }} onSave={handleSaveAdminChild} saving={saving} />}
       {registerChild && <RegisterModal child={registerChild} divisions={divisions} weeks={weeks} existingRegs={registrations.filter((r) => r.child_id === registerChild.id && r.status !== "cancelled")} settings={settings} siblingCount={children.filter((c) => c.parent_id === registerChild.parent_id).length} parent={parentMap[registerChild.parent_id]} onClose={() => setRegisterChild(null)} onRegister={handleAdminRegister} saving={saving} isAdmin={true} />}
 

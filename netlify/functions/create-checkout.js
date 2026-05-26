@@ -163,6 +163,10 @@ exports.handler = async (event) => {
       try { settings[row.key] = JSON.parse(row.value); } catch { settings[row.key] = row.value; }
     });
 
+    // Load ledger first so we can pass early_bird_locked to calculateBalance
+    const ledgerRows = await supabaseQuery("family_ledger", { filters: `&parent_id=eq.${parentId}` });
+    const ledger = ledgerRows && ledgerRows[0];
+
     // Server-side recalculation — single source of truth
     const calc = calculateBalance({
       children: children || [],
@@ -171,6 +175,7 @@ exports.handler = async (event) => {
       weeks,
       parent,
       settings,
+      ledger,
     });
 
     // Get code discount credits and payments from ledger
@@ -179,9 +184,8 @@ exports.handler = async (event) => {
     }) || [];
     const totalCodeCredits = discountLogs.reduce((sum, d) => sum + (Number(d.amount_cents) || 0), 0);
 
-    const ledger = await supabaseQuery("family_ledger", { filters: `&parent_id=eq.${parentId}` });
-    const totalPaid = (ledger && ledger[0]?.total_paid_cents) || 0;
-    const totalForgiven = (ledger && ledger[0]?.forgiven_cents) || 0;
+    const totalPaid = (ledger?.total_paid_cents) || 0;
+    const totalForgiven = (ledger?.forgiven_cents) || 0;
 
     const serverBalance = Math.max(0, calc.totalDue - totalCodeCredits - totalPaid - totalForgiven);
 

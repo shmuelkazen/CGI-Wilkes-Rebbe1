@@ -271,12 +271,25 @@ exports.handler = async (event) => {
         const totalPaidCents = (ledger?.total_paid_cents || 0) + amountCents;
         const totalDueCents = ledger?.total_due_cents || 0;
 
+        const campPatchBody = {
+          total_paid_cents: totalPaidCents,
+          updated_at: new Date().toISOString(),
+        };
+
+        // Auto-lock early bird if payment brings balance to zero before deadline
+        const settingsRows = await supabaseQuery("camp_settings", { filters: "&key=eq.early_bird_deadline" });
+        const ebVal = settingsRows && settingsRows[0]?.value;
+        let ebDeadline = null;
+        try { ebDeadline = ebVal ? new Date(JSON.parse(ebVal)) : null; } catch {}
+        const newBalance = totalDueCents - totalPaidCents - (ledger?.forgiven_cents || 0);
+        if (ebDeadline && new Date() < ebDeadline && newBalance <= 0 && totalDueCents > 0 && !ledger?.early_bird_locked) {
+          campPatchBody.early_bird_locked = true;
+          console.log(`Early bird locked for parent ${parentId}`);
+        }
+
         await supabaseQuery("family_ledger", {
           method: "PATCH",
-          body: {
-            total_paid_cents: totalPaidCents,
-            updated_at: new Date().toISOString(),
-          },
+          body: campPatchBody,
           filters: `&parent_id=eq.${parentId}`,
           headers: { Prefer: "return=minimal" },
         });
@@ -362,12 +375,25 @@ exports.handler = async (event) => {
       const totalPaidCents = (ledger?.total_paid_cents || 0) + amountCents;
       const totalDueCents = ledger?.total_due_cents || 0;
 
+      const invoicePatchBody = {
+        total_paid_cents: totalPaidCents,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Auto-lock early bird if payment brings balance to zero before deadline
+      const invSettingsRows = await supabaseQuery("camp_settings", { filters: "&key=eq.early_bird_deadline" });
+      const invEbVal = invSettingsRows && invSettingsRows[0]?.value;
+      let invEbDeadline = null;
+      try { invEbDeadline = invEbVal ? new Date(JSON.parse(invEbVal)) : null; } catch {}
+      const invNewBalance = totalDueCents - totalPaidCents - (ledger?.forgiven_cents || 0);
+      if (invEbDeadline && new Date() < invEbDeadline && invNewBalance <= 0 && totalDueCents > 0 && !ledger?.early_bird_locked) {
+        invoicePatchBody.early_bird_locked = true;
+        console.log(`Early bird locked for parent ${parentId} (invoice)`);
+      }
+
       await supabaseQuery("family_ledger", {
         method: "PATCH",
-        body: {
-          total_paid_cents: totalPaidCents,
-          updated_at: new Date().toISOString(),
-        },
+        body: invoicePatchBody,
         filters: `&parent_id=eq.${parentId}`,
         headers: { Prefer: "return=minimal" },
       });

@@ -88,6 +88,12 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         : [];
       setRegistrations([...regs, ...waitlistedRegs]);
 
+      // Load ledger first so we can pass early_bird_locked to calculateBalance
+      let led = null;
+      try {
+        led = await sb.query("family_ledger", { filters: `&parent_id=eq.${user.id}`, single: true });
+      } catch {}
+
       const calc = calculateBalance({
         children: c || [],
         registrations: regs, // only pending+confirmed, not waitlisted
@@ -95,6 +101,7 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
         weeks: wks || [],
         parent: p,
         settings: st,
+        ledger: led,
       });
       setBalanceCalc(calc);
 
@@ -111,15 +118,26 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       const totalCodeCredits = credits.reduce((sum, d) => sum + (Number(d.amount_cents) || 0), 0);
       const newTotalDue = Math.max(0, calc.totalDue - totalCodeCredits);
       try {
-        const led = await sb.query("family_ledger", { filters: `&parent_id=eq.${user.id}`, single: true });
-        if (led && led.total_due_cents !== newTotalDue) {
+        const patchBody = {
+          total_due_cents: newTotalDue,
+          discount_amount_cents: calc.discounts.total + totalCodeCredits,
+          updated_at: new Date().toISOString(),
+        };
+
+        // Auto-lock early bird if family is paid in full and deadline hasn't passed
+        const earlyBirdDeadline = st?.early_bird_deadline ? new Date(st.early_bird_deadline) : null;
+        const beforeDeadline = earlyBirdDeadline && new Date() < earlyBirdDeadline;
+        const totalPaid = (led?.total_paid_cents || 0);
+        const totalForgiven = (led?.forgiven_cents || 0);
+        const effectiveBalance = newTotalDue - totalPaid - totalForgiven;
+        if (beforeDeadline && effectiveBalance <= 0 && newTotalDue > 0 && !led?.early_bird_locked) {
+          patchBody.early_bird_locked = true;
+        }
+
+        if (led && (led.total_due_cents !== newTotalDue || patchBody.early_bird_locked)) {
           await sb.query("family_ledger", {
             method: "PATCH",
-            body: {
-              total_due_cents: newTotalDue,
-              discount_amount_cents: calc.discounts.total + totalCodeCredits,
-              updated_at: new Date().toISOString(),
-            },
+            body: patchBody,
             filters: `&parent_id=eq.${user.id}`,
             headers: { Prefer: "return=minimal" },
           });
@@ -380,13 +398,20 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       const newDiscounts = existingDiscounts + discountCents;
 
       if (ledger) {
+        const patchBody = {
+          total_due_cents: newTotalDue,
+          discount_amount_cents: newDiscounts,
+          updated_at: new Date().toISOString(),
+        };
+        // Auto-lock early bird if discount brings balance to zero before deadline
+        const ebDeadline = settings?.early_bird_deadline ? new Date(settings.early_bird_deadline) : null;
+        const newBalance = newTotalDue - totalPaid - totalForgiven;
+        if (ebDeadline && new Date() < ebDeadline && newBalance <= 0 && newTotalDue > 0 && !ledger.early_bird_locked) {
+          patchBody.early_bird_locked = true;
+        }
         await sb.query("family_ledger", {
           method: "PATCH",
-          body: {
-            total_due_cents: newTotalDue,
-            discount_amount_cents: newDiscounts,
-            updated_at: new Date().toISOString(),
-          },
+          body: patchBody,
           filters: `&parent_id=eq.${user.id}`,
           headers: { Prefer: "return=minimal" },
         });
