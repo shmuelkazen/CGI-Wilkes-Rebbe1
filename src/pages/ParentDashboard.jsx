@@ -249,7 +249,6 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
             method: "PATCH",
             body: {
               total_due_cents: currentDue,
-              discount_amount_cents: (ledger.discount_amount_cents || 0) + regData.discount_cents,
               updated_at: new Date().toISOString(),
             },
             filters: `&parent_id=eq.${user.id}`,
@@ -261,25 +260,30 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
             body: {
               parent_id: user.id,
               total_due_cents: regData.total_cents,
-              discount_amount_cents: regData.discount_cents,
             },
             headers: { Prefer: "return=minimal" },
           });
         }
       }
 
-      if (regData.discount_cents > 0) {
-        await sb.query("payment_log", {
-          method: "POST",
-          body: {
-            parent_id: user.id,
-            amount_cents: regData.discount_cents,
-            method: "discount",
-            discount_code_id: regData.discount_code_id,
-            notes: "Discount applied",
-          },
-          headers: { Prefer: "return=minimal" },
+      if (regData.discount_cents > 0 && regData.discount_code_id) {
+        // Only log discount once per family per code — check if already applied
+        const existing = await sb.query("payment_log", {
+          filters: `&parent_id=eq.${user.id}&method=eq.discount&discount_code_id=eq.${regData.discount_code_id}`,
         });
+        if (!existing || existing.length === 0) {
+          await sb.query("payment_log", {
+            method: "POST",
+            body: {
+              parent_id: user.id,
+              amount_cents: regData.discount_cents,
+              method: "discount",
+              discount_code_id: regData.discount_code_id,
+              notes: "Discount applied",
+            },
+            headers: { Prefer: "return=minimal" },
+          });
+        }
       }
 
       // Send waitlist confirmation email if any weeks were waitlisted
@@ -316,8 +320,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       if (regData.weeks.length > 0) {
         const currentDueCents = (ledger?.total_due_cents || 0) + regData.total_cents;
         setLedger((prev) => prev
-          ? { ...prev, total_due_cents: currentDueCents, discount_amount_cents: (prev.discount_amount_cents || 0) + regData.discount_cents }
-          : { parent_id: user.id, total_due_cents: regData.total_cents, total_paid_cents: 0, discount_amount_cents: regData.discount_cents }
+          ? { ...prev, total_due_cents: currentDueCents }
+          : { parent_id: user.id, total_due_cents: regData.total_cents, total_paid_cents: 0, discount_amount_cents: 0 }
         );
       }
 
