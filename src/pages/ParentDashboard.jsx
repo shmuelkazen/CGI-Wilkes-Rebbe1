@@ -118,23 +118,33 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
       const totalCodeCredits = credits.reduce((sum, d) => sum + (Number(d.amount_cents) || 0), 0);
       const newTotalDue = Math.max(0, calc.totalDue - totalCodeCredits);
       try {
+        // Lock total_due once money is on the ledger (payment or scholarship)
+        const ledgerLocked = led && ((led.total_paid_cents || 0) > 0 || (led.forgiven_cents || 0) > 0);
         const patchBody = {
-          total_due_cents: newTotalDue,
           discount_amount_cents: calc.discounts.total + totalCodeCredits,
           updated_at: new Date().toISOString(),
         };
+        if (!ledgerLocked) {
+          patchBody.total_due_cents = newTotalDue;
+        }
 
         // Auto-lock early bird if family is paid in full and deadline hasn't passed
         const earlyBirdDeadline = st?.early_bird_deadline ? new Date(st.early_bird_deadline) : null;
         const beforeDeadline = earlyBirdDeadline && new Date() < earlyBirdDeadline;
         const totalPaid = (led?.total_paid_cents || 0);
         const totalForgiven = (led?.forgiven_cents || 0);
-        const effectiveBalance = newTotalDue - totalPaid - totalForgiven;
-        if (beforeDeadline && effectiveBalance <= 0 && newTotalDue > 0 && !led?.early_bird_locked) {
+        const currentDue = ledgerLocked ? (led.total_due_cents || 0) : newTotalDue;
+        const effectiveBalance = currentDue - totalPaid - totalForgiven;
+        if (beforeDeadline && effectiveBalance <= 0 && currentDue > 0 && !led?.early_bird_locked) {
           patchBody.early_bird_locked = true;
         }
 
-        if (led && (led.total_due_cents !== newTotalDue || patchBody.early_bird_locked)) {
+        const needsPatch = led && (
+          (!ledgerLocked && led.total_due_cents !== newTotalDue) ||
+          led.discount_amount_cents !== patchBody.discount_amount_cents ||
+          patchBody.early_bird_locked
+        );
+        if (needsPatch) {
           await sb.query("family_ledger", {
             method: "PATCH",
             body: patchBody,

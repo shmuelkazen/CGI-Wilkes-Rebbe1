@@ -187,7 +187,11 @@ exports.handler = async (event) => {
     const totalPaid = (ledger?.total_paid_cents) || 0;
     const totalForgiven = (ledger?.forgiven_cents) || 0;
 
-    const serverBalance = Math.max(0, calc.totalDue - totalCodeCredits - totalPaid - totalForgiven);
+    // Lock: use ledger total_due once money is on the ledger (code credits already baked in)
+    const ledgerLocked = ledger && (totalPaid > 0 || totalForgiven > 0);
+    const serverBalance = ledgerLocked
+      ? Math.max(0, (ledger.total_due_cents || 0) - totalPaid - totalForgiven)
+      : Math.max(0, calc.totalDue - totalCodeCredits - totalPaid - totalForgiven);
 
     // Validate requested amount against server-calculated balance
     if (amountCents > serverBalance) {
