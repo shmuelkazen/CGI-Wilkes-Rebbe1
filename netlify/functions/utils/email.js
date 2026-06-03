@@ -475,16 +475,17 @@ function balanceReminderEmail({ parentName, balanceCents }) {
   const body = `
     <h2 ${styles.heading}>Outstanding Balance</h2>
     <p ${styles.text}>Hi ${parentName},</p>
-    <p ${styles.text}>Thank you for registering for ${CAMP_NAME}!</p>
-    <p ${styles.text}>Your registration is complete, but you have an outstanding balance of <strong>${formatCents(balanceCents)}</strong>. This total reflects the early bird rate, which is available for balances that are paid in full by 10 Sivan (May 26, 2026). After that date, this discount will no longer be available.</p>
-    <p ${styles.text}><strong>Please Note:</strong> In order to attend camp, payment must be complete or a payment plan made with Rabbi Green. If you would like to set up scheduled payments, please reply to this email with the payment amounts and dates that work best for you.</p>
+    <p ${styles.text}>Your registration is complete, but you have an outstanding balance of <strong>${formatCents(balanceCents)}</strong>.</p>
+    <p ${styles.text}>In order to keep your spots, payment must be completed before the start of camp or a payment plan made with Rabbi Green (347-760-2133).</p>
+    <p ${styles.text}>If you have any questions or need assistance, please email <a href="mailto:kingstoncgi@gmail.com" style="color:#2d7a45;">kingstoncgi@gmail.com</a>.</p>
+    <p ${styles.text}>Thank You</p>
     <p style="text-align:center;">
       <a href="${REGISTER_URL}" ${styles.button}>Log In to Pay &rarr;</a>
     </p>
   `;
 
   return {
-    subject: `${CAMP_NAME} — Complete Your Payment — Outstanding Balance`,
+    subject: `${CAMP_NAME} — Outstanding Balance`,
     html: wrapEmail(body),
   };
 }
