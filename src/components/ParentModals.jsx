@@ -1015,7 +1015,8 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
         </Field>
       </div>
 
-      {/* ELRC Self-Identification */}
+      {/* ELRC Self-Identification — hidden once data sent to state; new signups cannot opt in */}
+      {false && (
       <div style={{ borderTop: `1px solid ${colors.border}`, margin: "16px 0", paddingTop: 12 }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", marginBottom: 4 }}>
           <input type="checkbox" checked={form.elrc_status} onChange={(e) => handleElrcToggle(e.target.checked)} />
@@ -1033,6 +1034,7 @@ export const ProfileModal = ({ parent, onClose, onSave, saving }) => {
           </div>
         )}
       </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
         <button onClick={onClose} style={s.btn("secondary")}>Cancel</button>
