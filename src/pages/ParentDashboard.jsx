@@ -1022,7 +1022,8 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
           )}
         </div>
 
-        {/* ELRC / Childcare Subsidy */}
+        {/* ELRC / Childcare Subsidy — hidden once data sent to state; new signups cannot opt in */}
+        {false && (
         <div style={{ ...s.card, marginBottom: 24, border: parent?.elrc_status ? `2px solid ${colors.success}` : `1px solid ${colors.border}` }}>
           <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
             <input type="checkbox" checked={parent?.elrc_status === true}
@@ -1054,9 +1055,9 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               {Icons.check({ size: 13, color: colors.success })} ELRC rate applied — see updated prices below
             </div>
           )}
-        </div>
-
-        {/* Divisions & Pricing */}
+          </div>
+  
+          {/* Divisions & Pricing */}
         <div>
           <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>Divisions & Pricing</h2>
           <div style={{ display: "grid", gap: 12 }}>
