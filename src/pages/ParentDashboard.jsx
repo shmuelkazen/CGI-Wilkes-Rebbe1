@@ -1055,9 +1055,10 @@ export default function ParentDashboard({ user, isAdmin, setView, showToast }) {
               {Icons.check({ size: 13, color: colors.success })} ELRC rate applied — see updated prices below
             </div>
           )}
-          </div>
-  
-          {/* Divisions & Pricing */}
+        </div>
+        )}
+
+        {/* Divisions & Pricing */}
         <div>
           <h2 style={{ fontFamily: font.display, fontSize: 22, marginBottom: 16 }}>Divisions & Pricing</h2>
           <div style={{ display: "grid", gap: 12 }}>
