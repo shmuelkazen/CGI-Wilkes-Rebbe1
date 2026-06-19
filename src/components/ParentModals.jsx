@@ -357,7 +357,7 @@ export const AddChildModal = ({ onClose, onSave, onAddAnother, saving, divisions
 export const RegisterModal = ({ child, divisions, weeks, existingRegs, settings, siblingCount, parent, onClose, onRegister, saving, isAdmin }) => {
   const division = divisions.find((d) => d.id === child.assigned_division_id);
   const divisionWeeks = (weeks || [])
-    .filter((w) => w.division_id === child.assigned_division_id && w.active)
+    .filter((w) => w.division_id === child.assigned_division_id && w.active && (isAdmin || w.registration_open !== false))
     .sort((a, b) => a.sort_order - b.sort_order);
 
   const alreadyRegisteredWeekIds = new Set((existingRegs || []).map((r) => r.week_id));
