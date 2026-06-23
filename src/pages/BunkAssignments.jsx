@@ -202,14 +202,49 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
   };
 
   // ── CSV Export ──
-  const exportCSV = () => {
-    const rows = [["Bunk", "Staff", "Child First Name", "Child Last Name", "Grade", "Age", "DOB"]];
+  const exportCSV = async () => {
+    // Gather every child that will appear in the export (assigned + unassigned)
+    const exportKids = [];
+    bunks.forEach((bunk) => {
+      assignments
+        .filter((a) => a.bunk_id === bunk.id)
+        .map((a) => children.find((c) => c.id === a.child_id))
+        .filter(Boolean)
+        .forEach((kid) => exportKids.push(kid));
+    });
+    unassigned.forEach((kid) => exportKids.push(kid));
+
+    // Resolve child -> parent_id (fall back to a fetch if the children prop lacks it)
+    const parentIdByChild = {};
+    const childIds = [...new Set(exportKids.map((k) => k.id))];
+    const propHasParentId = exportKids.every((k) => k.parent_id != null);
+    try {
+      if (!propHasParentId && childIds.length) {
+        const crows = await sb.query("children", { filters: `&id=in.(${childIds.join(",")})&select=id,parent_id&limit=5000` });
+        (crows || []).forEach((r) => { parentIdByChild[r.id] = r.parent_id; });
+      } else {
+        exportKids.forEach((k) => { parentIdByChild[k.id] = k.parent_id; });
+      }
+    } catch (e) { console.error("Export: child->parent lookup failed:", e); }
+
+    // Resolve parent_id -> email
+    const emailByParent = {};
+    const parentIds = [...new Set(Object.values(parentIdByChild).filter(Boolean))];
+    try {
+      if (parentIds.length) {
+        const prows = await sb.query("parents", { filters: `&id=in.(${parentIds.join(",")})&select=id,email&limit=5000` });
+        (prows || []).forEach((p) => { emailByParent[p.id] = p.email || ""; });
+      }
+    } catch (e) { console.error("Export: parent email lookup failed:", e); }
+    const emailFor = (childId) => emailByParent[parentIdByChild[childId]] || "";
+
+    const rows = [["Bunk", "Staff", "Child First Name", "Child Last Name", "Grade", "Age", "DOB", "Parent Email"]];
     bunks.forEach((bunk) => {
       const bunkKids = assignments.filter((a) => a.bunk_id === bunk.id).map((a) => children.find((c) => c.id === a.child_id)).filter(Boolean).sort((a, b) => a.last_name.localeCompare(b.last_name));
-      if (!bunkKids.length) rows.push([bunk.name, bunk.staff_name || "", "", "", "", "", ""]);
-      else bunkKids.forEach((kid) => rows.push([bunk.name, bunk.staff_name || "", kid.first_name, kid.last_name, kid.grade ?? "", age(kid.date_of_birth), kid.date_of_birth || ""]));
+      if (!bunkKids.length) rows.push([bunk.name, bunk.staff_name || "", "", "", "", "", "", ""]);
+      else bunkKids.forEach((kid) => rows.push([bunk.name, bunk.staff_name || "", kid.first_name, kid.last_name, kid.grade ?? "", age(kid.date_of_birth), kid.date_of_birth || "", emailFor(kid.id)]));
     });
-    unassigned.forEach((kid) => rows.push(["UNASSIGNED", "", kid.first_name, kid.last_name, kid.grade ?? "", age(kid.date_of_birth), kid.date_of_birth || ""]));
+    unassigned.forEach((kid) => rows.push(["UNASSIGNED", "", kid.first_name, kid.last_name, kid.grade ?? "", age(kid.date_of_birth), kid.date_of_birth || "", emailFor(kid.id)]));
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
