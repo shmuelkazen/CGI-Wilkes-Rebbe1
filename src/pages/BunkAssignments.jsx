@@ -253,6 +253,72 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
     a.click(); URL.revokeObjectURL(url);
   };
 
+  // ── Full-season roster export (one row per kid, a column per week showing their bunk) ──
+  const exportFullRoster = async () => {
+    if (!divWeeks.length) { showToast("No weeks configured for this division"); return; }
+    setSaving(true);
+    try {
+      // Week IDs are division-specific, so filtering assignments by them cannot bleed across divisions
+      const weekIds = divWeeks.map((w) => w.id);
+      const allAssignments = await sb.query("bunk_assignments", { filters: `&week_id=in.(${weekIds.join(",")})&limit=10000` });
+      if (!allAssignments?.length) { showToast("No bunk assignments to export"); setSaving(false); return; }
+
+      // bunk_id -> name (from the loaded division bunks)
+      const bunkName = {};
+      bunks.forEach((b) => { bunkName[b.id] = b.name; });
+
+      // child_id -> { week_id: bunk name }
+      const byChild = {};
+      allAssignments.forEach((a) => {
+        if (!byChild[a.child_id]) byChild[a.child_id] = {};
+        byChild[a.child_id][a.week_id] = bunkName[a.bunk_id] || "";
+      });
+      const rosterChildIds = Object.keys(byChild);
+
+      // Resolve child -> parent_id (fall back to a fetch if the children prop lacks it)
+      const parentIdByChild = {};
+      const propHasParentId = rosterChildIds.every((id) => children.find((k) => k.id === id)?.parent_id != null);
+      if (propHasParentId) {
+        rosterChildIds.forEach((id) => { parentIdByChild[id] = children.find((k) => k.id === id)?.parent_id; });
+      } else {
+        try {
+          const crows = await sb.query("children", { filters: `&id=in.(${rosterChildIds.join(",")})&select=id,parent_id&limit=10000` });
+          (crows || []).forEach((r) => { parentIdByChild[r.id] = r.parent_id; });
+        } catch (e) { console.error("Full roster: child->parent lookup failed:", e); }
+      }
+
+      // Resolve parent_id -> email
+      const emailByParent = {};
+      const parentIds = [...new Set(Object.values(parentIdByChild).filter(Boolean))];
+      try {
+        if (parentIds.length) {
+          const prows = await sb.query("parents", { filters: `&id=in.(${parentIds.join(",")})&select=id,email&limit=10000` });
+          (prows || []).forEach((p) => { emailByParent[p.id] = p.email || ""; });
+        }
+      } catch (e) { console.error("Full roster: parent email lookup failed:", e); }
+      const emailFor = (cid) => emailByParent[parentIdByChild[cid]] || "";
+
+      // Identity columns + one column per week (in division sort order)
+      const rows = [["Child First Name", "Child Last Name", "Grade", "Age", "DOB", "Parent Email", ...divWeeks.map((w) => w.name)]];
+      rosterChildIds
+        .map((id) => children.find((k) => k.id === id) || { id, first_name: "", last_name: "", grade: null, date_of_birth: "" })
+        .sort((a, b) => (a.last_name || "").localeCompare(b.last_name || "") || (a.first_name || "").localeCompare(b.first_name || ""))
+        .forEach((kid) => {
+          const weekCells = divWeeks.map((w) => byChild[kid.id]?.[w.id] || "");
+          rows.push([kid.first_name || "", kid.last_name || "", kid.grade ?? "", age(kid.date_of_birth), kid.date_of_birth || "", emailFor(kid.id), ...weekCells]);
+        });
+
+      const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `bunk-roster-full-${currentDiv?.name || "div"}.csv`.replace(/\s+/g, "-").toLowerCase();
+      a.click(); URL.revokeObjectURL(url);
+      showToast(`Exported ${rosterChildIds.length} kid${rosterChildIds.length === 1 ? "" : "s"} across ${divWeeks.length} week${divWeeks.length === 1 ? "" : "s"}`);
+    } catch (e) { showToast("Error exporting roster: " + e.message); }
+    finally { setSaving(false); }
+  };
+
   // ── Drag handlers (desktop — flicker-fixed with enter/leave counter) ──
   const handleDragStart = (e, childId) => {
     let ids;
@@ -389,6 +455,9 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
           </button>
           <button onClick={exportCSV} disabled={!selWeek} style={{ ...s.btn("secondary"), fontSize: 13, padding: "8px 14px" }}>
             {Icons.download({ size: 14 })} Export CSV
+          </button>
+          <button onClick={exportFullRoster} disabled={saving} style={{ ...s.btn("secondary"), fontSize: 13, padding: "8px 14px" }}>
+            {Icons.download({ size: 14 })} Full Roster
           </button>
           <button onClick={() => setBunkModal("new")} style={{ ...s.btn("primary"), fontSize: 13, padding: "8px 14px" }}>
             {Icons.plus({ size: 14, color: "#fff" })} New Bunk
