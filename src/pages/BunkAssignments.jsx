@@ -319,6 +319,77 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
     finally { setSaving(false); }
   };
 
+  // ── Roster grouped by bunk (kids under each bunk, week columns marked for the weeks they're in THAT bunk) ──
+  const exportRosterByBunk = async () => {
+    if (!divWeeks.length) { showToast("No weeks configured for this division"); return; }
+    setSaving(true);
+    try {
+      // Week IDs are division-specific, so filtering assignments by them cannot bleed across divisions
+      const weekIds = divWeeks.map((w) => w.id);
+      const allAssignments = await sb.query("bunk_assignments", { filters: `&week_id=in.(${weekIds.join(",")})&limit=10000` });
+      if (!allAssignments?.length) { showToast("No bunk assignments to export"); setSaving(false); return; }
+
+      // `${bunk_id}|${child_id}` -> Set(week_id) ; bunk_id -> Set(child_id)
+      const weeksInBunk = {};
+      const childIdsByBunk = {};
+      allAssignments.forEach((a) => {
+        const key = `${a.bunk_id}|${a.child_id}`;
+        if (!weeksInBunk[key]) weeksInBunk[key] = new Set();
+        weeksInBunk[key].add(a.week_id);
+        if (!childIdsByBunk[a.bunk_id]) childIdsByBunk[a.bunk_id] = new Set();
+        childIdsByBunk[a.bunk_id].add(a.child_id);
+      });
+      const allChildIds = [...new Set(allAssignments.map((a) => a.child_id))];
+
+      // Resolve child -> parent_id (fall back to a fetch if the children prop lacks it)
+      const parentIdByChild = {};
+      const propHasParentId = allChildIds.every((id) => children.find((k) => k.id === id)?.parent_id != null);
+      if (propHasParentId) {
+        allChildIds.forEach((id) => { parentIdByChild[id] = children.find((k) => k.id === id)?.parent_id; });
+      } else {
+        try {
+          const crows = await sb.query("children", { filters: `&id=in.(${allChildIds.join(",")})&select=id,parent_id&limit=10000` });
+          (crows || []).forEach((r) => { parentIdByChild[r.id] = r.parent_id; });
+        } catch (e) { console.error("Roster by bunk: child->parent lookup failed:", e); }
+      }
+
+      // Resolve parent_id -> email
+      const emailByParent = {};
+      const parentIds = [...new Set(Object.values(parentIdByChild).filter(Boolean))];
+      try {
+        if (parentIds.length) {
+          const prows = await sb.query("parents", { filters: `&id=in.(${parentIds.join(",")})&select=id,email&limit=10000` });
+          (prows || []).forEach((p) => { emailByParent[p.id] = p.email || ""; });
+        }
+      } catch (e) { console.error("Roster by bunk: parent email lookup failed:", e); }
+      const emailFor = (cid) => emailByParent[parentIdByChild[cid]] || "";
+
+      // Grouped by bunk (sort order). "X" marks the weeks the kid is in THAT bunk.
+      const rows = [["Bunk", "Staff", "Child First Name", "Child Last Name", "Grade", "Age", "DOB", "Parent Email", ...divWeeks.map((w) => w.name)]];
+      bunks.forEach((bunk) => {
+        const ids = [...(childIdsByBunk[bunk.id] || [])];
+        if (!ids.length) { rows.push([bunk.name, bunk.staff_name || "", "", "", "", "", "", "", ...divWeeks.map(() => "")]); return; }
+        ids
+          .map((id) => children.find((k) => k.id === id) || { id, first_name: "", last_name: "", grade: null, date_of_birth: "" })
+          .sort((a, b) => (a.last_name || "").localeCompare(b.last_name || "") || (a.first_name || "").localeCompare(b.first_name || ""))
+          .forEach((kid) => {
+            const set = weeksInBunk[`${bunk.id}|${kid.id}`] || new Set();
+            const weekCells = divWeeks.map((w) => (set.has(w.id) ? "X" : ""));
+            rows.push([bunk.name, bunk.staff_name || "", kid.first_name || "", kid.last_name || "", kid.grade ?? "", age(kid.date_of_birth), kid.date_of_birth || "", emailFor(kid.id), ...weekCells]);
+          });
+      });
+
+      const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `roster-by-bunk-${currentDiv?.name || "div"}.csv`.replace(/\s+/g, "-").toLowerCase();
+      a.click(); URL.revokeObjectURL(url);
+      showToast(`Exported ${allChildIds.length} kid${allChildIds.length === 1 ? "" : "s"} grouped by bunk`);
+    } catch (e) { showToast("Error exporting roster: " + e.message); }
+    finally { setSaving(false); }
+  };
+
   // ── Drag handlers (desktop — flicker-fixed with enter/leave counter) ──
   const handleDragStart = (e, childId) => {
     let ids;
@@ -458,6 +529,9 @@ export default function BunkAssignments({ divisions, weeks, children, registrati
           </button>
           <button onClick={exportFullRoster} disabled={saving} style={{ ...s.btn("secondary"), fontSize: 13, padding: "8px 14px" }}>
             {Icons.download({ size: 14 })} Full Roster
+          </button>
+          <button onClick={exportRosterByBunk} disabled={saving} style={{ ...s.btn("secondary"), fontSize: 13, padding: "8px 14px" }}>
+            {Icons.download({ size: 14 })} Roster by Bunk
           </button>
           <button onClick={() => setBunkModal("new")} style={{ ...s.btn("primary"), fontSize: 13, padding: "8px 14px" }}>
             {Icons.plus({ size: 14, color: "#fff" })} New Bunk
